@@ -4,25 +4,40 @@ use crate::items::{
     list::Secs2List, uint1::Secs2Uint1, uint2::Secs2Uint2, uint4::Secs2Uint4, uint8::Secs2Uint8,
 };
 
-/// u8 타입 
-pub type Byte = u8;
-
 /// Secs-II 규격에 맞는 아이템 요소를 의미하는 trait
-pub trait Secs2Item {
-    type ItemType;
-    /// 내부 아이템을 반환
-    fn items(&self) -> &Self::ItemType;
-    /// 내부 아이템을 변경 가능하게 반환
-    fn items_as_mut(&mut self) -> &mut Self::ItemType;
+pub trait Secs2Item: ToString {
+    fn as_enum(self) -> Secs2ItemType;
+    // fn to_string_impl(&self) -> String;
+
+    /// 최대 3byte로 표현되는 item의 길이를 반환한다.
+    fn item_length(&self) -> usize;
+
+    // item length byte(최대 3byte)를 반환한다.
+    fn item_length_bytes(&self) -> Result<Vec<u8>, String> {
+        let mut item_len = self.item_length();
+
+        if item_len > 0xFFFFFF {
+            return Err(format!("data length {} is too long. length must be under 0xFFFFFF", item_len));
+        }
+
+        let mut bits = Vec::new();
+        while item_len > 0 {
+            bits.push((item_len & 0xFF) as u8);
+            item_len >>= 8;
+        }
+        bits.reverse();
+
+        Ok(bits)
+    }
 }
 
 /// Secs2Item 객체를 표현하는 Enum
 ///
 #[repr(u8)]
-pub enum Secs2Type {
-    LIST(Secs2List) = 0o00,
-    BINARY(Secs2Binary) = 0o10,
-    BOOLEAN(Secs2Boolean) = 0o11,
+pub enum Secs2ItemType {
+    List(Secs2List) = 0o00,
+    Binary(Secs2Binary) = 0o10,
+    Boolean(Secs2Boolean) = 0o11,
     ASCII(Secs2ASCII) = 0o20,
     /// JIS-8 타입. 현재 미구현
     Jis8 = 0o21,
@@ -38,4 +53,26 @@ pub enum Secs2Type {
     UInt1(Secs2Uint1) = 0o51,
     UInt2(Secs2Uint2) = 0o52,
     UInt4(Secs2Uint4) = 0o54,
+}
+
+impl Secs2ItemType {
+    fn value(&mut self) -> Result<&mut dyn Secs2Item, &'static str> {
+        match self {
+            Self::List(v) => Ok(v),
+            Self::Binary(v) => Ok(v),
+            Self::Boolean(v) => Ok(v),
+            Self::ASCII(v) => Ok(v),
+            Self::Int8(v) => Ok(v),
+            Self::Int1(v) => Ok(v),
+            Self::Int2(v) => Ok(v),
+            Self::Int4(v) => Ok(v),
+            Self::Float8(v) => Ok(v),
+            Self::Float4(v) => Ok(v),
+            Self::UInt8(v) => Ok(v),
+            Self::UInt1(v) => Ok(v),
+            Self::UInt2(v) => Ok(v),
+            Self::UInt4(v) => Ok(v),
+            _ => Err("target type is not implemented yet"),
+        }
+    }
 }

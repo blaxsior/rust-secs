@@ -1,17 +1,44 @@
-use crate::items::base::{Byte, Secs2Item};
+use crate::items::base::{Secs2Item, Secs2ItemType};
 
+type Secs2BooleanValue = Vec<u8>;
 pub struct Secs2Boolean {
-    items: Vec<Byte>,
+    item: Secs2BooleanValue,
+}
+
+impl Secs2Boolean {
+    fn items(&self) -> &Secs2BooleanValue {
+        &self.item
+    }
+
+    fn items_as_mut(&mut self) -> &mut Secs2BooleanValue {
+        &mut self.item
+    }
+
+    fn new(item: Secs2BooleanValue) -> Self {
+        Self { item }
+    }
 }
 
 impl Secs2Item for Secs2Boolean {
-    type ItemType = Vec<Byte>;
-
-    fn items(&self) -> &Self::ItemType {
-        &self.items
+    fn as_enum(self) -> Secs2ItemType {
+        Secs2ItemType::Boolean(self)
     }
 
-    fn items_as_mut(&mut self) -> &mut Self::ItemType {
-        &mut self.items
+    fn item_length(&self) -> usize {
+        self.item.len()
+    }
+}
+
+impl ToString for Secs2Boolean {
+    fn to_string(&self) -> String {
+        todo!()
+    }
+}
+
+impl TryFrom<Vec<u8>> for Secs2Boolean {
+    type Error = &'static str;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        Ok(Secs2Boolean::new(value))
     }
 }

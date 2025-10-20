@@ -1,17 +1,36 @@
-use crate::items::base::Secs2Item;
+use crate::items::base::{Secs2Item, Secs2ItemType};
 
+type Secs2Uint8Value = Vec<u64>;
 pub struct Secs2Uint8 {
-    items: Vec<u64>,
+    item: Secs2Uint8Value,
+}
+
+impl Secs2Uint8 {
+    fn items(&self) -> & Secs2Uint8Value {
+        &self.item
+    }
+
+    fn items_as_mut(&mut self) -> &mut Secs2Uint8Value {
+        &mut self.item
+    }
+
+        fn new(item: Secs2Uint8Value) -> Self {
+        Self { item }
+    }
 }
 
 impl Secs2Item for Secs2Uint8 {
-    type ItemType = Vec<u64>;
-
-    fn items(&self) -> &Self::ItemType {
-        &self.items
+    fn as_enum(self) -> Secs2ItemType {
+        Secs2ItemType::UInt8(self)
     }
+    
+    fn item_length(&self) -> usize {
+        self.item.len() * 8
+    }
+}
 
-    fn items_as_mut(&mut self) -> &mut Self::ItemType {
-        &mut self.items
+impl ToString for Secs2Uint8 {
+    fn to_string(&self) -> String {
+        todo!()
     }
 }

@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "drim_secs_ii"
+name = "secs_ii"
 version = "0.1.0"
