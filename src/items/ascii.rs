@@ -34,3 +34,12 @@ impl ToString for Secs2ASCII {
         todo!()
     }
 }
+
+impl TryFrom<Vec<u8>> for Secs2ASCII {
+    type Error = &'static str;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+
+        todo!()
+    }
+}

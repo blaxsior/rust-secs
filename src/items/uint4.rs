@@ -6,7 +6,6 @@ pub struct Secs2Uint4 {
 }
 
 impl Secs2Uint4 {
-
     fn items(&self) -> &Secs2Uint4Value {
         &self.item
     }
@@ -24,7 +23,7 @@ impl Secs2Item for Secs2Uint4 {
     fn as_enum(self) -> Secs2ItemType {
         Secs2ItemType::UInt4(self)
     }
-    
+
     fn item_length(&self) -> usize {
         self.item.len() * 4
     }

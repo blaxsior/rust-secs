@@ -17,7 +17,10 @@ pub trait Secs2Item: ToString {
         let mut item_len = self.item_length();
 
         if item_len > 0xFFFFFF {
-            return Err(format!("data length {} is too long. length must be under 0xFFFFFF", item_len));
+            return Err(format!(
+                "data length {} is too long. length must be under 0xFFFFFF",
+                item_len
+            ));
         }
 
         let mut bits = Vec::new();
@@ -33,7 +36,7 @@ pub trait Secs2Item: ToString {
 
 /// Secs2Item 객체를 표현하는 Enum
 ///
-#[repr(u8)]
+#[repr(usize)]
 pub enum Secs2ItemType {
     List(Secs2List) = 0o00,
     Binary(Secs2Binary) = 0o10,
@@ -75,4 +78,38 @@ impl Secs2ItemType {
             _ => Err("target type is not implemented yet"),
         }
     }
+
+    fn type_code(&self) -> usize {
+        match self {
+            Self::List(_) => 0o00,
+            Self::Binary(_) => 0o10,
+            Self::Boolean(_) => 0o11,
+            Self::ASCII(_) => 0o20,
+            Self::Jis8 => 0o21,
+            Self::Char => 0o22,
+            Self::Int8(_) => 0o30,
+            Self::Int1(_) => 0o31,
+            Self::Int2(_) => 0o32,
+            Self::Int4(_) => 0o34,
+            Self::Float8(_) => 0o40,
+            Self::Float4(_) => 0o44,
+            Self::UInt8(_) => 0o50,
+            Self::UInt1(_) => 0o51,
+            Self::UInt2(_) => 0o52,
+            Self::UInt4(_) => 0o54,
+        }
+    }
 }
+
+// impl TryFrom<Vec<u8>> for Secs2ItemType {
+//     type Error = &'static str;
+
+//     fn try_from(buf: Vec<u8>) -> Result<Self, Self::Error> {
+//         if buf.is_empty() {
+//             return Err("failed to convert byte arr to secs-II. item is empty");
+//         }
+
+//         return Ok(Secs2ItemType::Char);
+//     }
+// }
+

@@ -1,6 +1,6 @@
 use crate::items::base::{Secs2Item, Secs2ItemType};
 
-type Secs2ListValue = Vec<Box<dyn Secs2Item>>;
+type Secs2ListValue = Vec<Secs2ItemType>;
 
 pub struct Secs2List {
     item: Secs2ListValue,
