@@ -39,7 +39,12 @@ impl TryFrom<Vec<u8>> for Secs2ASCII {
     type Error = &'static str;
 
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        let result = String::from_utf8(value).expect("failed to parse buffer to ascii string");
 
-        todo!()
+        if result.is_ascii() {
+            Ok(Self::new(result))
+        } else {
+            Err("result data is not ascii string")
+        }
     }
 }
