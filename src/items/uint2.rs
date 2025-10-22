@@ -1,6 +1,7 @@
-use crate::items::base::{Secs2Item, Secs2ItemType};
+use crate::items::base::{Secs2Item, Secs2ItemCode, Secs2ItemType};
 
 type Secs2Uint2Value = Vec<u16>;
+static SECS2_UINT2_SIZE: usize = 2;
 pub struct Secs2Uint2 {
     item: Secs2Uint2Value,
 }
@@ -25,12 +26,37 @@ impl Secs2Item for Secs2Uint2 {
     }
     
     fn item_length(&self) -> usize {
-        self.item.len() * 2
+        self.item.len() * SECS2_UINT2_SIZE
+    }
+    
+    fn item_code() -> super::base::Secs2ItemCode {
+        Secs2ItemCode::UInt2
     }
 }
 
 impl ToString for Secs2Uint2 {
     fn to_string(&self) -> String {
         todo!()
+    }
+}
+
+impl TryFrom<Vec<u8>> for Secs2Uint2 {
+    type Error = &'static str;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        if (value.len() % SECS2_UINT2_SIZE) != 0 {
+            return Err("input data size is invalid");
+        }
+
+        let result = value
+            .chunks_exact(SECS2_UINT2_SIZE)
+            .map(|chunk| {
+                let arr: [u8; SECS2_UINT2_SIZE] =
+                    chunk.try_into().expect("failed to convert bytes to F8");
+                u16::from_be_bytes(arr)
+            })
+            .collect();
+
+        Ok(Secs2Uint2::new(result))
     }
 }

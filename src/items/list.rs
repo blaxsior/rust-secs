@@ -1,4 +1,4 @@
-use crate::items::base::{Secs2Item, Secs2ItemType};
+use crate::items::base::{Secs2Item, Secs2ItemCode, Secs2ItemType};
 
 type Secs2ListValue = Vec<Secs2ItemType>;
 
@@ -28,6 +28,10 @@ impl Secs2Item for Secs2List {
     fn item_length(&self) -> usize {
         return self.item.len()
     }
+    
+    fn item_code() -> super::base::Secs2ItemCode {
+        Secs2ItemCode::List
+    }
 }
 
 impl ToString for Secs2List {
@@ -35,3 +39,5 @@ impl ToString for Secs2List {
         todo!()
     }
 }
+
+// list item은 길이가 알려져 있지 않으므로 try-from으로 처리할 수 없음

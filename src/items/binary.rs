@@ -1,4 +1,4 @@
-use crate::items::base::{Secs2Item, Secs2ItemType};
+use crate::items::base::{Secs2Item, Secs2ItemCode, Secs2ItemType};
 
 type Secs2BinaryValue = Vec<u8>;
 pub struct Secs2Binary {
@@ -26,6 +26,10 @@ impl Secs2Item for Secs2Binary {
 
     fn item_length(&self) -> usize {
         self.item.len()
+    }
+    
+    fn item_code() -> super::base::Secs2ItemCode {
+        Secs2ItemCode::Binary
     }
 }
 

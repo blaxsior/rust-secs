@@ -1,3 +1,5 @@
+use num_enum::TryFromPrimitive;
+
 use crate::items::{
     ascii::Secs2ASCII, binary::Secs2Binary, boolean::Secs2Boolean, float4::Secs2Float4,
     float8::Secs2Float8, int1::Secs2Int1, int2::Secs2Int2, int4::Secs2Int4, int8::Secs2Int8,
@@ -8,6 +10,9 @@ use crate::items::{
 pub trait Secs2Item: ToString {
     fn as_enum(self) -> Secs2ItemType;
     // fn to_string_impl(&self) -> String;
+
+    /// 현재 타입에 대한 item code를 반환
+    fn item_code() -> Secs2ItemCode where Self: Sized;
 
     /// 최대 3byte로 표현되는 item의 길이를 반환한다.
     fn item_length(&self) -> usize;
@@ -34,28 +39,48 @@ pub trait Secs2Item: ToString {
     }
 }
 
-/// Secs2Item 객체를 표현하는 Enum
-///
-#[repr(usize)]
+/// Secs2Item 객체를 표현하는 Enum 객체
 pub enum Secs2ItemType {
-    List(Secs2List) = 0o00,
-    Binary(Secs2Binary) = 0o10,
-    Boolean(Secs2Boolean) = 0o11,
-    ASCII(Secs2ASCII) = 0o20,
+    List(Secs2List),
+    Binary(Secs2Binary),
+    Boolean(Secs2Boolean),
+    ASCII(Secs2ASCII),
     /// JIS-8 타입. 현재 미구현
-    Jis8 = 0o21,
+    Jis8 ,
     /// 2-byte char. 현재 미구현
+    Char,
+    Int8(Secs2Int8),
+    Int1(Secs2Int1),
+    Int2(Secs2Int2),
+    Int4(Secs2Int4),
+    Float8(Secs2Float8),
+    Float4(Secs2Float4),
+    UInt8(Secs2Uint8),
+    UInt1(Secs2Uint1),
+    UInt2(Secs2Uint2),
+    UInt4(Secs2Uint4),
+}
+
+/// SECS2 아이템 타입 코드를 표현하는 enum
+#[derive(Debug, TryFromPrimitive)]
+#[repr(u8)]
+pub enum Secs2ItemCode {
+    List = 0o00,
+    Binary = 0o10,
+    Boolean = 0o11,
+    ASCII = 0o20,
+    Jis8 = 0o21,
     Char = 0o22,
-    Int8(Secs2Int8) = 0o30,
-    Int1(Secs2Int1) = 0o31,
-    Int2(Secs2Int2) = 0o32,
-    Int4(Secs2Int4) = 0o34,
-    Float8(Secs2Float8) = 0o40,
-    Float4(Secs2Float4) = 0o44,
-    UInt8(Secs2Uint8) = 0o50,
-    UInt1(Secs2Uint1) = 0o51,
-    UInt2(Secs2Uint2) = 0o52,
-    UInt4(Secs2Uint4) = 0o54,
+    Int8 = 0o30,
+    Int1 = 0o31,
+    Int2 = 0o32,
+    Int4 = 0o34,
+    Float8 = 0o40,
+    Float4 = 0o44,
+    UInt8 = 0o50,
+    UInt1 = 0o51,
+    UInt2 = 0o52,
+    UInt4 = 0o54,
 }
 
 impl Secs2ItemType {
@@ -76,27 +101,6 @@ impl Secs2ItemType {
             Self::UInt2(v) => Ok(v),
             Self::UInt4(v) => Ok(v),
             _ => Err("target type is not implemented yet"),
-        }
-    }
-
-    fn type_code(&self) -> usize {
-        match self {
-            Self::List(_) => 0o00,
-            Self::Binary(_) => 0o10,
-            Self::Boolean(_) => 0o11,
-            Self::ASCII(_) => 0o20,
-            Self::Jis8 => 0o21,
-            Self::Char => 0o22,
-            Self::Int8(_) => 0o30,
-            Self::Int1(_) => 0o31,
-            Self::Int2(_) => 0o32,
-            Self::Int4(_) => 0o34,
-            Self::Float8(_) => 0o40,
-            Self::Float4(_) => 0o44,
-            Self::UInt8(_) => 0o50,
-            Self::UInt1(_) => 0o51,
-            Self::UInt2(_) => 0o52,
-            Self::UInt4(_) => 0o54,
         }
     }
 }

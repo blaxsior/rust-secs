@@ -1,4 +1,6 @@
-use crate::items::base::{Secs2Item, Secs2ItemType};
+use std::io::Cursor;
+
+use crate::items::base::{Secs2Item, Secs2ItemCode, Secs2ItemType};
 
 type Secs2ASCIIValue = String;
 pub struct Secs2ASCII {
@@ -26,6 +28,10 @@ impl Secs2Item for Secs2ASCII {
 
     fn item_length(&self) -> usize {
         self.item.chars().count()
+    }
+    
+    fn item_code() -> super::base::Secs2ItemCode {
+        Secs2ItemCode::ASCII
     }
 }
 
