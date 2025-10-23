@@ -1,49 +1,45 @@
-use crate::items::base::{Secs2Item, Secs2ItemCode, Secs2ItemType};
+use crate::items::base::{Secs2ItemBody, Secs2Item};
 
-type Secs2Uint8Value = Vec<u64>;
+type Secs2Uint8Item = Vec<u64>;
 static SECS2_UINT8_SIZE: usize = 8;
-pub struct Secs2Uint8 {
-    item: Secs2Uint8Value,
+pub struct Secs2Uint8Body {
+    item: Secs2Uint8Item,
 }
 
-impl Secs2Uint8 {
-    fn items(&self) -> & Secs2Uint8Value {
+impl Secs2Uint8Body {
+    fn items(&self) -> & Secs2Uint8Item {
         &self.item
     }
 
-    fn items_as_mut(&mut self) -> &mut Secs2Uint8Value {
+    fn items_as_mut(&mut self) -> &mut Secs2Uint8Item {
         &mut self.item
     }
 
-        fn new(item: Secs2Uint8Value) -> Self {
+        fn new(item: Secs2Uint8Item) -> Self {
         Self { item }
     }
 }
 
-impl Secs2Item for Secs2Uint8 {
-    fn as_enum(self) -> Secs2ItemType {
-        Secs2ItemType::UInt8(self)
+impl Secs2ItemBody for Secs2Uint8Body {
+    fn as_enum(self) -> Secs2Item {
+        Secs2Item::UInt8(self)
     }
     
     fn item_length(&self) -> usize {
         self.item.len() * SECS2_UINT8_SIZE
     }
-
-    fn item_code() -> super::base::Secs2ItemCode {
-        Secs2ItemCode::UInt8
-    }
 }
 
-impl ToString for Secs2Uint8 {
+impl ToString for Secs2Uint8Body {
     fn to_string(&self) -> String {
         todo!()
     }
 }
 
-impl TryFrom<Vec<u8>> for Secs2Uint8 {
+impl TryFrom<&[u8]> for Secs2Uint8Body {
     type Error = &'static str;
 
-    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if (value.len() % SECS2_UINT8_SIZE) != 0 {
             return Err("input data size is invalid");
         }
@@ -57,6 +53,6 @@ impl TryFrom<Vec<u8>> for Secs2Uint8 {
             })
             .collect();
 
-        Ok(Secs2Uint8::new(result))
+        Ok(Secs2Uint8Body::new(result))
     }
 }

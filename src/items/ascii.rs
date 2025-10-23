@@ -1,51 +1,45 @@
-use std::io::Cursor;
+use crate::items::base::{Secs2ItemBody, Secs2Item};
 
-use crate::items::base::{Secs2Item, Secs2ItemCode, Secs2ItemType};
-
-type Secs2ASCIIValue = String;
-pub struct Secs2ASCII {
-    item: Secs2ASCIIValue,
+type Secs2ASCIIItem = String;
+pub struct Secs2ASCIIBody {
+    item: Secs2ASCIIItem,
 }
 
-impl Secs2ASCII {
-    fn items(&self) -> &Secs2ASCIIValue {
+impl Secs2ASCIIBody {
+    fn items(&self) -> &Secs2ASCIIItem {
         &self.item
     }
 
-    fn items_as_mut(&mut self) -> &mut Secs2ASCIIValue {
+    fn items_as_mut(&mut self) -> &mut Secs2ASCIIItem {
         &mut self.item
     }
 
-    fn new(item: Secs2ASCIIValue) -> Self {
+    fn new(item: Secs2ASCIIItem) -> Self {
         Self { item }
     }
 }
 
-impl Secs2Item for Secs2ASCII {
-    fn as_enum(self) -> Secs2ItemType {
-        Secs2ItemType::ASCII(self)
+impl Secs2ItemBody for Secs2ASCIIBody {
+    fn as_enum(self) -> Secs2Item {
+        Secs2Item::ASCII(self)
     }
 
     fn item_length(&self) -> usize {
         self.item.chars().count()
     }
-    
-    fn item_code() -> super::base::Secs2ItemCode {
-        Secs2ItemCode::ASCII
-    }
 }
 
-impl ToString for Secs2ASCII {
+impl ToString for Secs2ASCIIBody {
     fn to_string(&self) -> String {
         todo!()
     }
 }
 
-impl TryFrom<Vec<u8>> for Secs2ASCII {
+impl TryFrom<&[u8]> for Secs2ASCIIBody {
     type Error = &'static str;
 
-    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        let result = String::from_utf8(value).expect("failed to parse buffer to ascii string");
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        let result = String::from_utf8(value.to_vec()).expect("failed to parse buffer to ascii string");
 
         if result.is_ascii() {
             Ok(Self::new(result))
@@ -54,3 +48,5 @@ impl TryFrom<Vec<u8>> for Secs2ASCII {
         }
     }
 }
+
+

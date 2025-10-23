@@ -1,48 +1,44 @@
-use crate::items::base::{Secs2Item, Secs2ItemCode, Secs2ItemType};
+use crate::items::base::{Secs2ItemBody, Secs2Item};
 
-type Secs2BooleanValue = Vec<u8>;
-pub struct Secs2Boolean {
-    item: Secs2BooleanValue,
+type Secs2BooleanItem = Vec<u8>;
+pub struct Secs2BooleanBody {
+    item: Secs2BooleanItem,
 }
 
-impl Secs2Boolean {
-    fn items(&self) -> &Secs2BooleanValue {
+impl Secs2BooleanBody {
+    fn items(&self) -> &Secs2BooleanItem {
         &self.item
     }
 
-    fn items_as_mut(&mut self) -> &mut Secs2BooleanValue {
+    fn items_as_mut(&mut self) -> &mut Secs2BooleanItem {
         &mut self.item
     }
 
-    fn new(item: Secs2BooleanValue) -> Self {
+    fn new(item: Secs2BooleanItem) -> Self {
         Self { item }
     }
 }
 
-impl Secs2Item for Secs2Boolean {
-    fn as_enum(self) -> Secs2ItemType {
-        Secs2ItemType::Boolean(self)
+impl Secs2ItemBody for Secs2BooleanBody {
+    fn as_enum(self) -> Secs2Item {
+        Secs2Item::Boolean(self)
     }
 
     fn item_length(&self) -> usize {
         self.item.len()
     }
-    
-    fn item_code() -> super::base::Secs2ItemCode {
-        Secs2ItemCode::Boolean
-    }
 }
 
-impl ToString for Secs2Boolean {
+impl ToString for Secs2BooleanBody {
     fn to_string(&self) -> String {
         todo!()
     }
 }
 
-impl TryFrom<Vec<u8>> for Secs2Boolean {
+impl TryFrom<&[u8]> for Secs2BooleanBody {
     type Error = &'static str;
 
-    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        Ok(Secs2Boolean::new(value))
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        Ok(Secs2BooleanBody::new(value.to_vec()))
     }
 }

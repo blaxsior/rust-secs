@@ -21,5 +21,3 @@ pub mod uint8; // 0o50
 pub mod uint1; // 0o51
 pub mod uint2; // 0o52
 pub mod uint4; // 0o54
-
-

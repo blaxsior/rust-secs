@@ -1,40 +1,36 @@
-use crate::items::base::{Secs2Item, Secs2ItemCode, Secs2ItemType};
+use crate::items::base::{Secs2ItemBody, Secs2FormatCode, Secs2Item};
 
-type Secs2ListValue = Vec<Secs2ItemType>;
+type Secs2ListItem = Vec<Secs2Item>;
 
-pub struct Secs2List {
-    item: Secs2ListValue,
+pub struct Secs2ListBody {
+    item: Secs2ListItem,
 }
 
-impl Secs2List {
-    pub fn items(&self) -> &Secs2ListValue {
+impl Secs2ListBody {
+    pub fn items(&self) -> &Secs2ListItem {
         &self.item
     }
 
-    pub fn items_as_mut(&mut self) -> &mut Secs2ListValue {
+    pub fn items_as_mut(&mut self) -> &mut Secs2ListItem {
         &mut self.item
     }
 
-    pub fn new(item: Secs2ListValue) -> Self {
+    pub fn new(item: Secs2ListItem) -> Self {
         Self { item }
     }
 }
 
-impl Secs2Item for Secs2List {
-    fn as_enum(self) -> Secs2ItemType {
-        return Secs2ItemType::List(self);
+impl Secs2ItemBody for Secs2ListBody {
+    fn as_enum(self) -> Secs2Item {
+        return Secs2Item::List(self);
     }
 
     fn item_length(&self) -> usize {
         return self.item.len()
     }
-    
-    fn item_code() -> super::base::Secs2ItemCode {
-        Secs2ItemCode::List
-    }
 }
 
-impl ToString for Secs2List {
+impl ToString for Secs2ListBody {
     fn to_string(&self) -> String {
         todo!()
     }

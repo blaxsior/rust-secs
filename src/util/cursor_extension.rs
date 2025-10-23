@@ -1,22 +1,23 @@
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 
 /// cursor에 대한 read extension
-trait CursorReadExt {
-    fn read_i8(&self) -> i8;
-    fn read_i16(&self) -> i16;
-    fn read_i32(&self) -> i32;
-    fn read_i64(&self) -> i64;
+pub trait CursorReadExt {
+    // fn read_i8(&self) -> i8;
+    // fn read_i16(&self) -> i16;
+    // fn read_i32(&self) -> i32;
+    // fn read_i64(&self) -> i64;
 
-    fn read_u8(&self) -> u8;
-    fn read_u16(&self) -> u16;
-    fn read_u32(&self) -> u32;
-    fn read_u64(&self) -> u64;
+    // 1 byte u8 데이터를 읽어 반환한다.
+    fn read_u8(&mut self) -> Result<u8, String>;
+    // fn read_u16(&self) -> u16;
+    // fn read_u32(&self) -> u32;
+    // fn read_u64(&self) -> u64;
 
-    fn read_ascii(&self) -> String;
+    // fn read_ascii(&self) -> String;
 }
 
 /// cursor에 대한 write extension
-trait CursorWriteExt {
+pub trait CursorWriteExt {
     fn write_i8(&self);
     fn write_i16(&self);
     fn write_i32(&self);
@@ -30,39 +31,11 @@ trait CursorWriteExt {
 }
 
 impl<T: AsRef<[u8]>> CursorReadExt for Cursor<T> {
-    fn read_i8(&self) -> i8 {
-        todo!()
-    }
-
-    fn read_i16(&self) -> i16 {
-        todo!()
-    }
-
-    fn read_i32(&self) -> i32 {
-        todo!()
-    }
-
-    fn read_i64(&self) -> i64 {
-        todo!()
-    }
-
-    fn read_u8(&self) -> u8 {
-        todo!()
-    }
-
-    fn read_u16(&self) -> u16 {
-        todo!()
-    }
-
-    fn read_u32(&self) -> u32 {
-        todo!()
-    }
-
-    fn read_u64(&self) -> u64 {
-        todo!()
-    }
-
-    fn read_ascii(&self) -> String {
-        todo!()
+    fn read_u8(&mut self) -> Result<u8, String> {
+        let mut buf = [0u8; 1];
+        match self.read(&mut buf) {
+            Ok(_) => Ok(buf[0]),
+            Err(e) => Err(e.to_string()),
+        }
     }
 }
