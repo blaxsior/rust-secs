@@ -1,45 +1,37 @@
-use crate::items::base::{Secs2ItemBody, Secs2Item};
+use crate::item::{Secs2Variant, Secs2Item};
 
 type Secs2Float4Item = Vec<f32>;
 static SECS2_FLOAT4_SIZE: usize = 4;
 
-pub struct Secs2Float4Body {
+pub struct Secs2Float4 {
     item: Secs2Float4Item,
 }
 
-impl Secs2Float4Body {
-    
-    fn items(&self) -> &Secs2Float4Item {
+impl Secs2Float4 {
+    pub fn items(&self) -> &Secs2Float4Item {
         &self.item
     }
 
-    fn items_as_mut(&mut self) -> &mut Secs2Float4Item {
+    pub fn items_as_mut(&mut self) -> &mut Secs2Float4Item {
         &mut self.item
     }
 
-    fn new(item: Secs2Float4Item) -> Self {
+    pub fn new(item: Secs2Float4Item) -> Self {
         Self { item }
     }
 }
 
-impl Secs2ItemBody for Secs2Float4Body {
-    fn as_enum(self) -> Secs2Item {
-        Secs2Item::Float4(self)
+impl Secs2Item for Secs2Float4 {
+    fn as_enum(self) -> Secs2Variant {
+        Secs2Variant::Float4(self)
     }
     
-    fn item_length(&self) -> usize {
+    fn length(&self) -> usize {
         self.item.len() * SECS2_FLOAT4_SIZE
     }
 }
 
-impl ToString for Secs2Float4Body {
-    fn to_string(&self) -> String {
-        todo!()
-    }
-}
-
-
-impl TryFrom<&[u8]> for Secs2Float4Body {
+impl TryFrom<&[u8]> for Secs2Float4 {
     type Error = &'static str;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
@@ -52,6 +44,6 @@ impl TryFrom<&[u8]> for Secs2Float4Body {
             f32::from_be_bytes(arr)
         }).collect();
 
-        Ok(Secs2Float4Body::new(result))
+        Ok(Secs2Float4::new(result))
     }
 }

@@ -1,65 +1,56 @@
+pub mod ascii;
+pub mod binary;
+pub mod boolean;
+pub mod char;
+pub mod float4;
+pub mod float8;
+pub mod int1;
+pub mod int2;
+pub mod int4;
+pub mod int8;
+pub mod jis8;
+pub mod list;
+pub mod uint1;
+pub mod uint2;
+pub mod uint4;
+pub mod uint8;
+
+use std::io::Read;
+
 use num_enum::TryFromPrimitive;
 
-use crate::items::{
-    ascii::Secs2ASCIIBody, binary::Secs2BinaryBody, boolean::Secs2BooleanBody, float4::Secs2Float4Body,
-    float8::Secs2Float8Body, int1::Secs2Int1Body, int2::Secs2Int2Body, int4::Secs2Int4Body, int8::Secs2Int8Body,
-    list::Secs2ListBody, uint1::Secs2Uint1Body, uint2::Secs2Uint2Body, uint4::Secs2Uint4Body, uint8::Secs2Uint8Body,
+use crate::item::{
+    ascii::Secs2ASCII, binary::Secs2Binary, boolean::Secs2Boolean, float4::Secs2Float4,
+    float8::Secs2Float8, int1::Secs2Int1, int2::Secs2Int2, int4::Secs2Int4, int8::Secs2Int8,
+    list::Secs2List, uint1::Secs2Uint1, uint2::Secs2Uint2, uint4::Secs2Uint4, uint8::Secs2Uint8,
 };
 
-/// Secs-II 규격에 맞는 아이템 요소를 의미하는 trait
-pub trait Secs2ItemBody: ToString {
-    fn as_enum(self) -> Secs2Item;
-    // fn to_string_impl(&self) -> String;
-
-    /// item의 길이를 반환한다.
-    fn item_length(&self) -> usize;
-
-    // length_bytes_number(최대 3byte)를 반환한다.
-    fn length_bytes(&self) -> Result<Vec<u8>, String> {
-        let mut item_len = self.item_length();
-
-        if item_len > 0xFFFFFF {
-            return Err(format!(
-                "data length {} is too long. length must be under 0xFFFFFF",
-                item_len
-            ));
-        }
-
-        let mut bits = Vec::new();
-        while item_len > 0 {
-            bits.push((item_len & 0xFF) as u8);
-            item_len >>= 8;
-        }
-        bits.reverse();
-
-        Ok(bits)
-    }
-}
-
-/// Secs2Item 객체를 표현하는 Enum 객체
-pub enum Secs2Item {
-    List(Secs2ListBody),
-    Binary(Secs2BinaryBody),
-    Boolean(Secs2BooleanBody),
-    ASCII(Secs2ASCIIBody),
+///
+/// Secs-II 타입 객체를 표현하는 enum 클래스
+///
+pub enum Secs2Variant {
+    List(Secs2List),
+    Binary(Secs2Binary),
+    Boolean(Secs2Boolean),
+    ASCII(Secs2ASCII),
     /// JIS-8 타입. 현재 미구현
     Jis8,
     /// 2-byte char. 현재 미구현
     Char,
-    Int8(Secs2Int8Body),
-    Int1(Secs2Int1Body),
-    Int2(Secs2Int2Body),
-    Int4(Secs2Int4Body),
-    Float8(Secs2Float8Body),
-    Float4(Secs2Float4Body),
-    UInt8(Secs2Uint8Body),
-    UInt1(Secs2Uint1Body),
-    UInt2(Secs2Uint2Body),
-    UInt4(Secs2Uint4Body),
+    Int8(Secs2Int8),
+    Int1(Secs2Int1),
+    Int2(Secs2Int2),
+    Int4(Secs2Int4),
+    Float8(Secs2Float8),
+    Float4(Secs2Float4),
+    UInt8(Secs2Uint8),
+    UInt1(Secs2Uint1),
+    UInt2(Secs2Uint2),
+    UInt4(Secs2Uint4),
 }
 
-impl Secs2Item {
-    fn value(&mut self) -> Result<&mut dyn Secs2ItemBody, &'static str> {
+impl Secs2Variant {
+    pub fn value(&mut self) -> Result<&mut dyn Secs2Item, &'static str> {
         match self {
             Self::List(v) => Ok(v),
             Self::Binary(v) => Ok(v),
@@ -79,8 +70,10 @@ impl Secs2Item {
         }
     }
 
-    /// 현재 Item에 대한 format code를 반환
-    fn format_code(&mut self) -> Secs2FormatCode {
+    ///
+    /// 현재 타입에 맞는 format code를 반환한다.
+    ///
+    pub fn format_code(&mut self) -> Secs2FormatCode {
         match self {
             Self::List(_) => Secs2FormatCode::List,
             Self::Binary(_) => Secs2FormatCode::Binary,
@@ -101,6 +94,17 @@ impl Secs2Item {
         }
     }
 }
+
+// impl TryFrom<&[u8]> for Secs2Variant {
+//     type Error = &'static str;
+
+//     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+//         use std::io::Cursor;
+
+//         let cursor = Cursor::new(value);
+        
+//     }
+// }
 
 /// SECS2 아이템 타입 코드를 표현하는 enum
 #[derive(Debug, TryFromPrimitive)]
@@ -124,11 +128,14 @@ pub enum Secs2FormatCode {
     UInt4 = 0o54,
 }
 
+pub trait Secs2Item {
+    ///
+    /// item을 enum으로 변환한다.
+    ///
+    fn as_enum(self) -> Secs2Variant;
 
-
-// impl TryFrom<Vec<u8>> for Secs2Item {
-//     type Error = &'static str;
-
-//     fn try_from(buf: Vec<u8>) -> Result<Self, Self::Error> {
-//     }
-// }
+    ///
+    /// item의 길이를 반환한다
+    ///
+    fn length(&self) -> usize;
+}

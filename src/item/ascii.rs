@@ -1,41 +1,35 @@
-use crate::items::base::{Secs2ItemBody, Secs2Item};
+use crate::item::{Secs2Variant, Secs2Item};
 
 type Secs2ASCIIItem = String;
-pub struct Secs2ASCIIBody {
+pub struct Secs2ASCII {
     item: Secs2ASCIIItem,
 }
 
-impl Secs2ASCIIBody {
-    fn items(&self) -> &Secs2ASCIIItem {
+impl Secs2ASCII {
+    pub fn items(&self) -> &Secs2ASCIIItem {
         &self.item
     }
 
-    fn items_as_mut(&mut self) -> &mut Secs2ASCIIItem {
+    pub fn items_as_mut(&mut self) -> &mut Secs2ASCIIItem {
         &mut self.item
     }
 
-    fn new(item: Secs2ASCIIItem) -> Self {
+    pub fn new(item: Secs2ASCIIItem) -> Self {
         Self { item }
     }
 }
 
-impl Secs2ItemBody for Secs2ASCIIBody {
-    fn as_enum(self) -> Secs2Item {
-        Secs2Item::ASCII(self)
+impl Secs2Item for Secs2ASCII {
+    fn as_enum(self) -> Secs2Variant {
+        Secs2Variant::ASCII(self)
     }
 
-    fn item_length(&self) -> usize {
+    fn length(&self) -> usize {
         self.item.chars().count()
     }
 }
 
-impl ToString for Secs2ASCIIBody {
-    fn to_string(&self) -> String {
-        todo!()
-    }
-}
-
-impl TryFrom<&[u8]> for Secs2ASCIIBody {
+impl TryFrom<&[u8]> for Secs2ASCII {
     type Error = &'static str;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
@@ -48,5 +42,3 @@ impl TryFrom<&[u8]> for Secs2ASCIIBody {
         }
     }
 }
-
-

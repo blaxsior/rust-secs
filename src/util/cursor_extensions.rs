@@ -30,7 +30,10 @@ pub trait CursorWriteExt {
     fn read_ascii(&self);
 }
 
-impl<T: AsRef<[u8]>> CursorReadExt for Cursor<T> {
+impl<T> CursorReadExt for Cursor<T>
+where
+    T: AsRef<[u8]>,
+{
     fn read_u8(&mut self) -> Result<u8, String> {
         let mut buf = [0u8; 1];
         match self.read(&mut buf) {

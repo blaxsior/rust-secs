@@ -1,1 +1,1 @@
-pub mod cursor_extension;
+pub mod cursor_extensions;
