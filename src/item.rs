@@ -95,19 +95,17 @@ impl Secs2Variant {
     }
 }
 
-// impl TryFrom<&[u8]> for Secs2Variant {
-//     type Error = &'static str;
+impl TryFrom<&[u8]> for Secs2Variant {
+    type Error = String;
 
-//     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-//         use std::io::Cursor;
-
-//         let cursor = Cursor::new(value);
-        
-//     }
-// }
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        use crate::convert::secs2_converter;
+        secs2_converter::parse(&value)
+    }
+}
 
 /// SECS2 아이템 타입 코드를 표현하는 enum
-#[derive(Debug, TryFromPrimitive)]
+#[derive(Debug, TryFromPrimitive, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Secs2FormatCode {
     List = 0o00,
@@ -138,4 +136,47 @@ pub trait Secs2Item {
     /// item의 길이를 반환한다
     ///
     fn length(&self) -> usize;
+}
+
+#[cfg(test)]
+mod tests {
+    use core::panic;
+
+    use crate::item::Secs2Variant;
+
+    #[test]
+    fn try_from_for_variant() {
+        let data: Vec<u8> = vec![
+            0x01, 0x02, 0x21, 0x02, 0x0B, 0x0C, 0x41, 0x05, 0x68, 0x65, 0x6C, 0x6C, 0x6F,
+        ];
+
+        let variant =
+            Secs2Variant::try_from(data.as_slice()).expect("should ok <L> <B[2] 11, 12> <A hello>");
+        let Secs2Variant::List(list) = &variant else {
+            panic!("expected list variant");
+        };
+
+        let items = list.items();
+        assert_eq!(items.len(), 2);
+
+        // binary variant
+        let binary_variant = &items[0];
+        let Secs2Variant::Binary(bin) = binary_variant else {
+            panic!("expected binary item");
+        };
+
+        let bin_values = bin.items();
+        assert_eq!(bin_values.len(), 2);
+        assert_eq!(bin_values[0], 11);
+        assert_eq!(bin_values[1], 12);
+
+        // ascii variant
+        let ascii_variant = &items[1];
+        let Secs2Variant::ASCII(ascii) = ascii_variant else {
+            panic!("expected ascii item");
+        };
+
+        let text = ascii.items();
+        assert_eq!(text, "hello");
+    }
 }

@@ -2,16 +2,19 @@ use std::io::{Cursor, Read};
 
 use crate::{
     item::{
-        Secs2FormatCode, Secs2Item, Secs2Variant, ascii::Secs2ASCII, binary::Secs2Binary, boolean::Secs2Boolean, float4::Secs2Float4, float8::Secs2Float8, int1::Secs2Int1, int2::Secs2Int2, int4::Secs2Int4, int8::Secs2Int8, list::Secs2List, uint1::Secs2Uint1, uint2::Secs2Uint2, uint4::Secs2Uint4, uint8::Secs2Uint8
+        Secs2FormatCode, Secs2Item, Secs2Variant, ascii::Secs2ASCII, binary::Secs2Binary,
+        boolean::Secs2Boolean, float4::Secs2Float4, float8::Secs2Float8, int1::Secs2Int1,
+        int2::Secs2Int2, int4::Secs2Int4, int8::Secs2Int8, list::Secs2List, uint1::Secs2Uint1,
+        uint2::Secs2Uint2, uint4::Secs2Uint4, uint8::Secs2Uint8,
     },
-    util::cursor_extensions::{CursorReadExt},
+    util::cursor_extensions::CursorReadExt,
 };
 
-pub fn parse<T>(data: T) -> Result<Secs2Variant, String>
+pub fn parse<T>(data: &T) -> Result<Secs2Variant, String>
 where
-    T: AsRef<[u8]>,
+    T: AsRef<[u8]>
 {
-    let mut cursor = Cursor::new(data);
+    let mut cursor  = Cursor::new(data.as_ref());
     parse_impl(&mut cursor)
 }
 
@@ -30,11 +33,10 @@ fn parse_impl<T: AsRef<[u8]>>(cursor: &mut Cursor<T>) -> Result<Secs2Variant, St
     if let Secs2FormatCode::List = format_code {
         let mut items: Vec<Secs2Variant> = Vec::with_capacity(item_length);
         for _ in 1..=item_length {
-            let child = parse_impl(cursor)?;
-            items.push(child);
+            items.push(parse_impl(cursor)?);
         }
 
-        return Ok(Secs2List::new(items).as_enum());
+        Ok(Secs2List::new(items).as_enum())
     } else {
         // 아닌 경우 byte 데이터를 읽어 대상 아이템 생성
         let mut buf = vec![0u8; item_length];
@@ -57,7 +59,8 @@ fn parse_impl<T: AsRef<[u8]>>(cursor: &mut Cursor<T>) -> Result<Secs2Variant, St
             Secs2FormatCode::Int2 => Secs2Int2::try_from(buf.as_slice())?.as_enum(),
             Secs2FormatCode::Int4 => Secs2Int4::try_from(buf.as_slice())?.as_enum(),
             _ => {
-                panic!("not implemented type");
+                // must not reach
+                return Err("not implemented type".into());
             }
         };
         return Ok(item);
@@ -111,15 +114,151 @@ fn get_item_length(bytes: &[u8]) -> usize {
     bytes.iter().fold(0, |acc, &b| (acc << 8) | (b as usize))
 }
 
-fn read_and_convert<CT: Read, T, F>(
-    cursor: &mut CT,
-    item_length: usize,
-    conv: F,
-) -> Result<T, String>
-where
-    F: FnOnce(&[u8]) -> Result<T, &'static str>,
-{
-    let mut buf = vec![0u8; item_length];
-    cursor.read_exact(&mut buf).map_err(|e| e.to_string())?;
-    conv(&buf).map_err(|e| e.to_string())
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod get_format_code_test {
+        use super::*;
+
+        #[test]
+        fn list_code() {
+            let b: u8 = 0b00 << 2;
+            let expected = Secs2FormatCode::List;
+            assert_eq!(get_format_code(b).unwrap(), expected);
+        }
+
+        #[test]
+        fn binary_code() {
+            let b: u8 = 0o10 << 2;
+            let expected = Secs2FormatCode::Binary;
+            assert_eq!(get_format_code(b).unwrap(), expected);
+        }
+
+        #[test]
+        fn boolean_code() {
+            let b: u8 = 0o11 << 2;
+            let expected = Secs2FormatCode::Boolean;
+            assert_eq!(get_format_code(b).unwrap(), expected);
+        }
+
+        #[test]
+        fn ascii_code() {
+            let b: u8 = 0o20 << 2;
+            let expected = Secs2FormatCode::ASCII;
+            assert_eq!(get_format_code(b).unwrap(), expected);
+        }
+
+        #[test]
+        fn jis8_code() {
+            let b: u8 = 0o21 << 2;
+            let expected = Secs2FormatCode::Jis8;
+            assert_eq!(get_format_code(b).unwrap(), expected);
+        }
+
+        #[test]
+        fn char_code() {
+            let b: u8 = 0o22 << 2;
+            let expected = Secs2FormatCode::Char;
+            assert_eq!(get_format_code(b).unwrap(), expected);
+        }
+
+        #[test]
+        fn int8_code() {
+            let b: u8 = 0o30 << 2;
+            let expected = Secs2FormatCode::Int8;
+            assert_eq!(get_format_code(b).unwrap(), expected);
+        }
+
+        #[test]
+        fn int1_code() {
+            let b: u8 = 0o31 << 2;
+            let expected = Secs2FormatCode::Int1;
+            assert_eq!(get_format_code(b).unwrap(), expected);
+        }
+
+        #[test]
+        fn int2_code() {
+            let b: u8 = 0o32 << 2;
+            let expected = Secs2FormatCode::Int2;
+            assert_eq!(get_format_code(b).unwrap(), expected);
+        }
+
+        #[test]
+        fn int4_code() {
+            let b: u8 = 0o34 << 2;
+            let expected = Secs2FormatCode::Int4;
+            assert_eq!(get_format_code(b).unwrap(), expected);
+        }
+
+        #[test]
+        fn float8_code() {
+            let b: u8 = 0o40 << 2;
+            let expected = Secs2FormatCode::Float8;
+            assert_eq!(get_format_code(b).unwrap(), expected);
+        }
+
+        #[test]
+        fn float4_code() {
+            let b: u8 = 0o44 << 2;
+            let expected = Secs2FormatCode::Float4;
+            assert_eq!(get_format_code(b).unwrap(), expected);
+        }
+
+        #[test]
+        fn uint8_code() {
+            let b: u8 = 0o50 << 2;
+            let expected = Secs2FormatCode::UInt8;
+            assert_eq!(get_format_code(b).unwrap(), expected);
+        }
+
+        #[test]
+        fn uint1_code() {
+            let b: u8 = 0o51 << 2;
+            let expected = Secs2FormatCode::UInt1;
+            assert_eq!(get_format_code(b).unwrap(), expected);
+        }
+
+        #[test]
+        fn uint2_code() {
+            let b: u8 = 0o52 << 2;
+            let expected = Secs2FormatCode::UInt2;
+            assert_eq!(get_format_code(b).unwrap(), expected);
+        }
+
+        #[test]
+        fn uint4_code() {
+            let b: u8 = 0o54 << 2;
+            let expected = Secs2FormatCode::UInt4;
+            assert_eq!(get_format_code(b).unwrap(), expected);
+        }
+    }
+
+    mod get_length_bytes_number_test {
+        use crate::convert::secs2_converter::get_length_bytes_number;
+
+        #[test]
+        fn return_ok_if_byte_between_1_and_3() {
+            let b = 0b10010101;
+            let result = get_length_bytes_number(b).unwrap();
+            assert_eq!(result, 1);
+
+            let b = 0b10100110;
+            let result = get_length_bytes_number(b).unwrap();
+            assert_eq!(result, 2);
+
+            let b = 0b11100111;
+            let result = get_length_bytes_number(b).unwrap();
+            assert_eq!(result, 3);
+        }
+
+        /// 명세에 의해 length bytes number은 반드시 1 ~ 3 사이의 값을 가져야 함.
+        /// 0은 허용되지 않음
+        #[test]
+        fn return_err_if_byte_be_0() {
+            let b = 0b11100100;
+            let result = get_length_bytes_number(b);
+            assert!(result.is_err(), "length bytes number should between 1 ~ 3 by SECS-II specification");
+        }
+    }
 }
