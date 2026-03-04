@@ -2,7 +2,7 @@ use crate::item::{Secs2Variant, Secs2Item};
 
 type Secs2Float4Item = Vec<f32>;
 static SECS2_FLOAT4_SIZE: usize = 4;
-
+#[derive(Debug)]
 pub struct Secs2Float4 {
     item: Secs2Float4Item,
 }

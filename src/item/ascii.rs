@@ -1,6 +1,7 @@
 use crate::item::{Secs2Variant, Secs2Item};
 
 type Secs2ASCIIItem = String;
+#[derive(Debug)]
 pub struct Secs2ASCII {
     item: Secs2ASCIIItem,
 }

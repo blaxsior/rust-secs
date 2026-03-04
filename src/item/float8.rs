@@ -1,7 +1,8 @@
-use crate::item::{Secs2Variant, Secs2Item};
+use crate::item::{Secs2Item, Secs2Variant};
 
 type Secs2Float8Item = Vec<f64>;
 static SECS2_FLOAT8_SIZE: usize = 8;
+#[derive(Debug)]
 pub struct Secs2Float8 {
     item: Secs2Float8Item,
 }
@@ -38,10 +39,14 @@ impl TryFrom<&[u8]> for Secs2Float8 {
             return Err("input data size is invalid");
         }
 
-        let result = value.chunks_exact(SECS2_FLOAT8_SIZE).map(|chunk| {
-            let arr: [u8; SECS2_FLOAT8_SIZE] = chunk.try_into().expect("failed to convert bytes to F8");
-            f64::from_be_bytes(arr)
-        }).collect();
+        let result = value
+            .chunks_exact(SECS2_FLOAT8_SIZE)
+            .map(|chunk| {
+                let arr: [u8; SECS2_FLOAT8_SIZE] =
+                    chunk.try_into().expect("failed to convert bytes to F8");
+                f64::from_be_bytes(arr)
+            })
+            .collect();
 
         Ok(Secs2Float8::new(result))
     }

@@ -1,7 +1,7 @@
 use crate::item::{Secs2Variant, Secs2Item};
 
 type Secs2ListItem = Vec<Secs2Variant>;
-
+#[derive(Debug)]
 pub struct Secs2List {
     item: Secs2ListItem,
 }

@@ -1,6 +1,7 @@
 use crate::item::{Secs2Variant, Secs2Item};
 
 type Secs2BooleanItem = Vec<u8>;
+#[derive(Debug)]
 pub struct Secs2Boolean {
     item: Secs2BooleanItem,
 }

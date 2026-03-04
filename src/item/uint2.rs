@@ -2,6 +2,7 @@ use crate::item::{Secs2Item, Secs2Variant};
 
 type Secs2Uint2Item = Vec<u16>;
 static SECS2_UINT2_SIZE: usize = 2;
+#[derive(Debug)]
 pub struct Secs2Uint2 {
     item: Secs2Uint2Item,
 }

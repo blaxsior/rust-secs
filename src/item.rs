@@ -15,8 +15,6 @@ pub mod uint2;
 pub mod uint4;
 pub mod uint8;
 
-use std::io::Read;
-
 use num_enum::TryFromPrimitive;
 
 use crate::item::{
@@ -28,6 +26,7 @@ use crate::item::{
 ///
 /// Secs-II 타입 객체를 표현하는 enum 클래스
 ///
+#[derive(Debug)]
 pub enum Secs2Variant {
     List(Secs2List),
     Binary(Secs2Binary),
@@ -140,7 +139,7 @@ pub trait Secs2Item {
 
 #[cfg(test)]
 mod tests {
-    use core::panic;
+    use core::{ascii, panic};
 
     use crate::item::Secs2Variant;
 
@@ -162,7 +161,7 @@ mod tests {
         // binary variant
         let binary_variant = &items[0];
         let Secs2Variant::Binary(bin) = binary_variant else {
-            panic!("expected binary item");
+            panic!("expected binary item, but found {:?}", binary_variant);
         };
 
         let bin_values = bin.items();
@@ -173,7 +172,7 @@ mod tests {
         // ascii variant
         let ascii_variant = &items[1];
         let Secs2Variant::ASCII(ascii) = ascii_variant else {
-            panic!("expected ascii item");
+            panic!("expected ascii item, but found {:?}", ascii_variant);
         };
 
         let text = ascii.items();
