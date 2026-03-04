@@ -139,7 +139,7 @@ pub trait Secs2Item {
 
 #[cfg(test)]
 mod tests {
-    use core::{ascii, panic};
+    use core::{panic};
 
     use crate::item::Secs2Variant;
 

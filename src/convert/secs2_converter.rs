@@ -12,9 +12,9 @@ use crate::{
 
 pub fn parse<T>(data: &T) -> Result<Secs2Variant, String>
 where
-    T: AsRef<[u8]>
+    T: AsRef<[u8]>,
 {
-    let mut cursor  = Cursor::new(data.as_ref());
+    let mut cursor = Cursor::new(data.as_ref());
     parse_impl(&mut cursor)
 }
 
@@ -101,7 +101,7 @@ fn read_item_length_bytes<T: AsRef<[u8]>>(
             length_bytes_no
         ));
     }
-
+    
     let mut buf = vec![0u8; length_bytes_no];
     cursor
         .read_exact(&mut buf)
@@ -258,7 +258,50 @@ mod tests {
         fn return_err_if_byte_be_0() {
             let b = 0b11100100;
             let result = get_length_bytes_number(b);
-            assert!(result.is_err(), "length bytes number should between 1 ~ 3 by SECS-II specification");
+            assert!(
+                result.is_err(),
+                "length bytes number should between 1 ~ 3 by SECS-II specification"
+            );
         }
     }
+
+    mod read_item_length_bytes_test {
+        use super::*;
+        use std::io::Cursor;
+
+        #[test]
+        fn should_return_err_if_length_number_smaller_than_1() {
+            let err_num = 0;
+            let buf = [0u8; 2];
+            let mut cursor = Cursor::new(&buf);
+
+            let result = read_item_length_bytes(&mut cursor, err_num);
+            let msg = result.expect_err("must err if num out of range [1,3]");
+            assert!(msg.contains("length bytes number must be in"));
+        }
+
+        #[test]
+        fn should_return_err_if_length_number_bigger_than_3() {
+            let err_num = 4;
+            let buf = [0u8; 2];
+            let mut cursor = Cursor::new(&buf);
+
+            let result = read_item_length_bytes(&mut cursor, err_num);
+            let msg = result.expect_err("must err if num out of range [1,3]");
+            assert!(msg.contains("length bytes number must be in"));
+        }
+
+        // buffer is not enough for len_number
+        #[test]
+        fn should_return_err_if_buffer_length_not_enough() {
+            let len_number = 3;
+            let buf = [0u8; 2];
+            let mut cursor = Cursor::new(&buf);
+
+            let result = read_item_length_bytes(&mut cursor, len_number);
+            let msg = result.expect_err("expect: buffer size is not enough. but enough");
+            assert!(msg.contains("error occurred when reading bytes"));
+        }
+    }
+
 }
