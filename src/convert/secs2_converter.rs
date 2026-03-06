@@ -101,9 +101,10 @@ fn read_item_length_bytes<T: AsRef<[u8]>>(
             length_bytes_no
         ));
     }
-    
+
     let mut buf = vec![0u8; length_bytes_no];
     cursor
+        .take(3)
         .read_exact(&mut buf)
         .map_err(|e| format!("error occurred when reading bytes: {:#?}", e))?;
     Ok(buf)
@@ -299,9 +300,37 @@ mod tests {
             let mut cursor = Cursor::new(&buf);
 
             let result = read_item_length_bytes(&mut cursor, len_number);
-            let msg = result.expect_err("expect: buffer size is not enough. but enough");
+            let msg = result.expect_err("buffer size is not enough. but enough");
             assert!(msg.contains("error occurred when reading bytes"));
+        }
+
+        #[test]
+        fn should_return_ok_if_buffer_length_enough() {
+            let len_number = 3;
+            let buf = [0xABu8, 0xCDu8, 0xEFu8];
+            let mut cursor = Cursor::new(&buf);
+
+            let result = read_item_length_bytes(&mut cursor, len_number);
+            let length_bytes = result.expect("buffer size is not enough");
+            assert_eq!(len_number, length_bytes.len());
+
+            for i in 0..len_number {
+                assert_eq!(buf[i], length_bytes[i]);
+            }
         }
     }
 
+    mod get_item_length_test {
+        use super::*;
+
+        #[test]
+        fn should_return_buffer_as_big_endian_usize() {
+            let bytes: [u8; 3] = [0xAB, 0xCD, 0xEF];
+            let expected: usize = 0xABCDEF;
+
+            let result = get_item_length(&bytes);
+
+            assert_eq!(result,expected);
+        }
+    }
 }
