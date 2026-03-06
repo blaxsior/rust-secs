@@ -45,6 +45,8 @@ fn parse_impl<T: AsRef<[u8]>>(cursor: &mut Cursor<T>) -> Result<Secs2Variant, St
             .map_err(|e| format!("error occurred when reading bytes: {:#?}", e))?;
 
         let item: Secs2Variant = match format_code {
+            // list의 경우 위 조건에 의해 필터링되어 접근 불가능해야 함
+            Secs2FormatCode::List => panic!("unreachable code"),
             Secs2FormatCode::ASCII => Secs2ASCII::try_from(buf.as_slice())?.as_enum(),
             Secs2FormatCode::Binary => Secs2Binary::try_from(buf.as_slice())?.as_enum(),
             Secs2FormatCode::Boolean => Secs2Boolean::try_from(buf.as_slice())?.as_enum(),
@@ -58,8 +60,7 @@ fn parse_impl<T: AsRef<[u8]>>(cursor: &mut Cursor<T>) -> Result<Secs2Variant, St
             Secs2FormatCode::Int1 => Secs2Int1::try_from(buf.as_slice())?.as_enum(),
             Secs2FormatCode::Int2 => Secs2Int2::try_from(buf.as_slice())?.as_enum(),
             Secs2FormatCode::Int4 => Secs2Int4::try_from(buf.as_slice())?.as_enum(),
-            _ => {
-                // must not reach
+            Secs2FormatCode::Jis8 | Secs2FormatCode::Char => {
                 return Err("not implemented type".into());
             }
         };
@@ -236,7 +237,7 @@ mod tests {
     }
 
     mod get_length_bytes_number_test {
-        use crate::convert::secs2_converter::get_length_bytes_number;
+        use super::*;
 
         #[test]
         fn return_ok_if_byte_between_1_and_3() {

@@ -15,7 +15,7 @@ pub mod uint2;
 pub mod uint4;
 pub mod uint8;
 
-use num_enum::TryFromPrimitive;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use crate::item::{
     ascii::Secs2ASCII, binary::Secs2Binary, boolean::Secs2Boolean, float4::Secs2Float4,
@@ -55,6 +55,8 @@ impl Secs2Variant {
             Self::Binary(v) => Ok(v),
             Self::Boolean(v) => Ok(v),
             Self::ASCII(v) => Ok(v),
+            Self::Jis8 => todo!("unimplemented yet"),
+            Self::Char => todo!("unimplemented yet"),
             Self::Int8(v) => Ok(v),
             Self::Int1(v) => Ok(v),
             Self::Int2(v) => Ok(v),
@@ -65,7 +67,6 @@ impl Secs2Variant {
             Self::UInt1(v) => Ok(v),
             Self::UInt2(v) => Ok(v),
             Self::UInt4(v) => Ok(v),
-            _ => Err("target type is not implemented yet"),
         }
     }
 
@@ -98,13 +99,13 @@ impl TryFrom<&[u8]> for Secs2Variant {
     type Error = String;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        use crate::convert::secs2_converter;
-        secs2_converter::parse(&value)
+        use crate::convert::secs2;
+        secs2::parse::parse(&value)
     }
 }
 
 /// SECS2 아이템 타입 코드를 표현하는 enum
-#[derive(Debug, TryFromPrimitive, PartialEq, Eq)]
+#[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Secs2FormatCode {
     List = 0o00,
@@ -141,7 +142,7 @@ pub trait Secs2Item {
 mod tests {
     use core::{panic};
 
-    use crate::item::Secs2Variant;
+    use super::*;
 
     #[test]
     fn try_from_for_variant() {
@@ -177,5 +178,23 @@ mod tests {
 
         let text = ascii.items();
         assert_eq!(text, "hello");
+    }
+
+    #[test]
+    fn try_into_for_variant() {
+        let expected: Vec<u8> = vec![
+            0x01, 0x02, 0x21, 0x02, 0x0B, 0x0C, 0x41, 0x05, 0x68, 0x65, 0x6C, 0x6C, 0x6F,
+        ];
+
+        let variant = Secs2List::new(
+            vec![
+                Secs2Binary::new(vec![11u8, 12u8]).as_enum(),
+                Secs2ASCII::new(String::from("hello")).as_enum()
+            ]
+        );
+
+
+        let result: Secs2Variant = expected.as_slice().try_into().unwrap();
+
     }
 }

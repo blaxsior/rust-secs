@@ -1,1 +1,1 @@
-pub mod secs2_converter;
+pub mod secs2;
