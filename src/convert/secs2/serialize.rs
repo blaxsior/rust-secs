@@ -130,8 +130,6 @@ mod tests {
     }
 
     mod serialize_test {
-        use crate::item::{Secs2Item, ascii::Secs2ASCII, binary::Secs2Binary, list::Secs2List};
-
         use super::*;
 
         #[test]
@@ -140,11 +138,10 @@ mod tests {
                 0x01, 0x02, 0x21, 0x02, 0x0B, 0x0C, 0x41, 0x05, 0x68, 0x65, 0x6C, 0x6C, 0x6F,
             ];
 
-            let variant = Secs2List::new(vec![
-                Secs2Binary::new(vec![11u8, 12u8]).as_enum(),
-                Secs2ASCII::new(String::from("hello")).as_enum(),
-            ])
-            .as_enum();
+            let variant = Secs2Variant::list(vec![
+                Secs2Variant::binary(vec![11u8, 12u8]),
+                Secs2Variant::ascii(String::from("hello")),
+            ]);
 
             let mut buf = Vec::new();
             serialize_to(&mut buf, &variant).expect("must be encoded");

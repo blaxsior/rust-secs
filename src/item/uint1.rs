@@ -1,6 +1,6 @@
 use crate::{convert::secs2::serialize::Encode, item::{Secs2Item, Secs2Variant}};
 
-type Secs2Uint1Item = Vec<u8>;
+pub type Secs2Uint1Item = Vec<u8>;
 
 // static SECS2_UINT1_SIZE: usize = 1;
 #[derive(Debug)]

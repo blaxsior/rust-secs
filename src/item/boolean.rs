@@ -3,7 +3,9 @@ use crate::{
     item::{Secs2Item, Secs2Variant},
 };
 
-type Secs2BooleanItem = Vec<u8>;
+pub type Secs2BooleanItem = Vec<u8>;
+pub type Secs2BooleanItem2 = Vec<bool>;
+
 #[derive(Debug)]
 pub struct Secs2Boolean {
     item: Secs2BooleanItem,
@@ -20,6 +22,15 @@ impl Secs2Boolean {
 
     pub fn new(item: Secs2BooleanItem) -> Self {
         Self { item }
+    }
+
+    /// boolean 배열로부터 Secs2Boolean을 생성
+    pub fn from(item: Secs2BooleanItem2) -> Self {
+        Self::new(item.into_iter().map(|b| b as u8).collect::<Vec<u8>>())
+    }
+
+    pub fn is_true(&self, idx: usize) -> Option<bool> {
+        self.item.get(idx).map(|&b| b > 0)
     }
 }
 

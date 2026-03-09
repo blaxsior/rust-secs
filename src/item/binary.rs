@@ -1,6 +1,6 @@
 use crate::{convert::secs2::serialize::Encode, item::{Secs2Item, Secs2Variant}};
 
-type Secs2BinaryItem = Vec<u8>;
+pub type Secs2BinaryItem = Vec<u8>;
 #[derive(Debug)]
 pub struct Secs2Binary {
     item: Secs2BinaryItem,

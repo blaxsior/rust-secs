@@ -1,6 +1,6 @@
 use crate::{convert::secs2::serialize::Encode, item::{Secs2Item, Secs2Variant}};
 
-type Secs2Int2Item = Vec<i16>;
+pub type Secs2Int2Item = Vec<i16>;
 static SECS2_INT2_SIZE: usize = 2;
 #[derive(Debug)]
 pub struct Secs2Int2 {

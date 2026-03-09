@@ -17,11 +17,26 @@ pub mod uint8;
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-use crate::{convert::secs2::serialize::Encode, error::Secs2Error, item::{
-    ascii::Secs2ASCII, binary::Secs2Binary, boolean::Secs2Boolean, float4::Secs2Float4,
-    float8::Secs2Float8, int1::Secs2Int1, int2::Secs2Int2, int4::Secs2Int4, int8::Secs2Int8,
-    list::Secs2List, uint1::Secs2Uint1, uint2::Secs2Uint2, uint4::Secs2Uint4, uint8::Secs2Uint8,
-}};
+use crate::{
+    convert::secs2::serialize::Encode,
+    error::Secs2Error,
+    item::{
+        ascii::{Secs2ASCII, Secs2ASCIIItem},
+        binary::{Secs2Binary, Secs2BinaryItem},
+        boolean::{Secs2Boolean, Secs2BooleanItem, Secs2BooleanItem2},
+        float4::{Secs2Float4, Secs2Float4Item},
+        float8::{Secs2Float8, Secs2Float8Item},
+        int1::{Secs2Int1, Secs2Int1Item},
+        int2::{Secs2Int2, Secs2Int2Item},
+        int4::{Secs2Int4, Secs2Int4Item},
+        int8::{Secs2Int8, Secs2Int8Item},
+        list::{Secs2List, Secs2ListItem},
+        uint1::{Secs2Uint1, Secs2Uint1Item},
+        uint2::{Secs2Uint2, Secs2Uint2Item},
+        uint4::{Secs2Uint4, Secs2Uint4Item},
+        uint8::{Secs2Uint8, Secs2Uint8Item},
+    },
+};
 
 ///
 /// Secs-II 타입 객체를 표현하는 enum 클래스
@@ -93,6 +108,50 @@ impl Secs2Variant {
             Self::UInt4(_) => Secs2FormatCode::UInt4,
         }
     }
+
+    // 이하 생성자 정의
+    pub fn ascii(item: Secs2ASCIIItem) -> Secs2Variant {
+        Secs2ASCII::new(item).as_enum()
+    }
+    pub fn binary(item: Secs2BinaryItem) -> Secs2Variant {
+        Secs2Binary::new(item).as_enum()
+    }
+    pub fn boolean(item: Secs2BooleanItem2) -> Secs2Variant {
+        Secs2Boolean::from(item).as_enum()
+    }
+    pub fn float4(item: Secs2Float4Item) -> Secs2Variant {
+        Secs2Float4::new(item).as_enum()
+    }
+    pub fn float8(item: Secs2Float8Item) -> Secs2Variant {
+        Secs2Float8::new(item).as_enum()
+    }
+    pub fn int1(item: Secs2Int1Item) -> Secs2Variant {
+        Secs2Int1::new(item).as_enum()
+    }
+    pub fn int2(item: Secs2Int2Item) -> Secs2Variant {
+        Secs2Int2::new(item).as_enum()
+    }
+    pub fn int4(item: Secs2Int4Item) -> Secs2Variant {
+        Secs2Int4::new(item).as_enum()
+    }
+    pub fn int8(item: Secs2Int8Item) -> Secs2Variant {
+        Secs2Int8::new(item).as_enum()
+    }
+    pub fn list(item: Secs2ListItem) -> Secs2Variant {
+        Secs2List::new(item).as_enum()
+    }
+    pub fn uint1(item: Secs2Uint1Item) -> Secs2Variant {
+        Secs2Uint1::new(item).as_enum()
+    }
+    pub fn uint2(item: Secs2Uint2Item) -> Secs2Variant {
+        Secs2Uint2::new(item).as_enum()
+    }
+    pub fn uint4(item: Secs2Uint4Item) -> Secs2Variant {
+        Secs2Uint4::new(item).as_enum()
+    }
+    pub fn uint8(item: Secs2Uint8Item) -> Secs2Variant {
+        Secs2Uint8::new(item).as_enum()
+    }
 }
 
 impl Encode for Secs2Variant {
@@ -147,7 +206,7 @@ pub trait Secs2Item {
 
 #[cfg(test)]
 mod tests {
-    use core::{panic};
+    use core::panic;
 
     use super::*;
 
@@ -193,12 +252,10 @@ mod tests {
             0x01, 0x02, 0x21, 0x02, 0x0B, 0x0C, 0x41, 0x05, 0x68, 0x65, 0x6C, 0x6C, 0x6F,
         ];
 
-        let variant = Secs2List::new(
-            vec![
-                Secs2Binary::new(vec![11u8, 12u8]).as_enum(),
-                Secs2ASCII::new(String::from("hello")).as_enum()
-            ]
-        ).as_enum();
+        let variant = Secs2Variant::list(vec![
+            Secs2Variant::binary(vec![11u8, 12u8]),
+            Secs2Variant::ascii(String::from("hello")),
+        ]);
 
         let mut buf = Vec::new();
         variant.encode(&mut buf).expect("must be encoded");

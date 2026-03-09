@@ -1,6 +1,6 @@
 use crate::{convert::secs2::serialize::Encode, item::{Secs2Item, Secs2Variant}};
 
-type Secs2ASCIIItem = String;
+pub type Secs2ASCIIItem = String;
 #[derive(Debug)]
 pub struct Secs2ASCII {
     item: Secs2ASCIIItem,
