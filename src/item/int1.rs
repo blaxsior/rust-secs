@@ -1,4 +1,4 @@
-use crate::item::{Secs2Variant, Secs2Item};
+use crate::{convert::secs2::serialize::Encode, item::{Secs2Item, Secs2Variant}};
 
 type Secs2Int1Item = Vec<i8>;
 static SECS2_INT1_SIZE: usize = 1;
@@ -28,6 +28,16 @@ impl Secs2Item for Secs2Int1 {
 
     fn length(&self) -> usize {
         self.item.len() // * SECS2_INT1_SIZE
+    }
+}
+
+impl Encode for Secs2Int1 {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<(), crate::error::Secs2Error> {
+        for v in &self.item {
+            w.write_all(&v.to_be_bytes())?;
+        }
+
+        Ok(())
     }
 }
 

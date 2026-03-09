@@ -1,4 +1,4 @@
-use crate::item::{Secs2Variant, Secs2Item};
+use crate::{convert::secs2::serialize::Encode, item::{Secs2Item, Secs2Variant}};
 
 type Secs2ASCIIItem = String;
 #[derive(Debug)]
@@ -27,6 +27,13 @@ impl Secs2Item for Secs2ASCII {
 
     fn length(&self) -> usize {
         self.item.chars().count()
+    }
+}
+
+impl Encode for Secs2ASCII {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<(), crate::error::Secs2Error> {
+        w.write_all(self.items().as_bytes())?;
+        Ok(())
     }
 }
 

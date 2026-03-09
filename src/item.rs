@@ -17,11 +17,11 @@ pub mod uint8;
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
-use crate::item::{
+use crate::{convert::secs2::serialize::Encode, error::Secs2Error, item::{
     ascii::Secs2ASCII, binary::Secs2Binary, boolean::Secs2Boolean, float4::Secs2Float4,
     float8::Secs2Float8, int1::Secs2Int1, int2::Secs2Int2, int4::Secs2Int4, int8::Secs2Int8,
     list::Secs2List, uint1::Secs2Uint1, uint2::Secs2Uint2, uint4::Secs2Uint4, uint8::Secs2Uint8,
-};
+}};
 
 ///
 /// Secs-II 타입 객체를 표현하는 enum 클래스
@@ -49,14 +49,14 @@ pub enum Secs2Variant {
 }
 
 impl Secs2Variant {
-    pub fn value(&mut self) -> Result<&mut dyn Secs2Item, &'static str> {
+    pub fn value(&self) -> Result<&dyn Secs2Item, Secs2Error> {
         match self {
             Self::List(v) => Ok(v),
             Self::Binary(v) => Ok(v),
             Self::Boolean(v) => Ok(v),
             Self::ASCII(v) => Ok(v),
-            Self::Jis8 => todo!("unimplemented yet"),
-            Self::Char => todo!("unimplemented yet"),
+            Self::Jis8 => Err(Secs2Error::Unimplemented),
+            Self::Char => Err(Secs2Error::Unimplemented),
             Self::Int8(v) => Ok(v),
             Self::Int1(v) => Ok(v),
             Self::Int2(v) => Ok(v),
@@ -73,7 +73,7 @@ impl Secs2Variant {
     ///
     /// 현재 타입에 맞는 format code를 반환한다.
     ///
-    pub fn format_code(&mut self) -> Secs2FormatCode {
+    pub fn format_code(&self) -> Secs2FormatCode {
         match self {
             Self::List(_) => Secs2FormatCode::List,
             Self::Binary(_) => Secs2FormatCode::Binary,
@@ -92,6 +92,13 @@ impl Secs2Variant {
             Self::UInt2(_) => Secs2FormatCode::UInt2,
             Self::UInt4(_) => Secs2FormatCode::UInt4,
         }
+    }
+}
+
+impl Encode for Secs2Variant {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<(), Secs2Error> {
+        use crate::convert::secs2;
+        secs2::serialize::serialize_to(w, self)
     }
 }
 
@@ -181,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn try_into_for_variant() {
+    fn encode_for_variant() {
         let expected: Vec<u8> = vec![
             0x01, 0x02, 0x21, 0x02, 0x0B, 0x0C, 0x41, 0x05, 0x68, 0x65, 0x6C, 0x6C, 0x6F,
         ];
@@ -191,10 +198,11 @@ mod tests {
                 Secs2Binary::new(vec![11u8, 12u8]).as_enum(),
                 Secs2ASCII::new(String::from("hello")).as_enum()
             ]
-        );
+        ).as_enum();
 
+        let mut buf = Vec::new();
+        variant.encode(&mut buf).expect("must be encoded");
 
-        let result: Secs2Variant = expected.as_slice().try_into().unwrap();
-
+        assert_eq!(buf, expected);
     }
 }

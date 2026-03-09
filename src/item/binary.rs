@@ -1,4 +1,4 @@
-use crate::item::{Secs2Variant, Secs2Item};
+use crate::{convert::secs2::serialize::Encode, item::{Secs2Item, Secs2Variant}};
 
 type Secs2BinaryItem = Vec<u8>;
 #[derive(Debug)]
@@ -29,6 +29,13 @@ impl Secs2Item for Secs2Binary {
         self.item.len()
     }
 }
+impl Encode for Secs2Binary {
+    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<(), crate::error::Secs2Error> {
+        w.write_all(self.items())?;
+        Ok(())
+    }
+}
+
 
 impl TryFrom<&[u8]> for Secs2Binary {
     type Error = &'static str;

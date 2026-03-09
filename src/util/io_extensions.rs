@@ -1,7 +1,7 @@
-use std::io::{Cursor, Read};
+use std::io::{Read};
 
 /// cursor에 대한 read extension
-pub trait CursorReadExt {
+pub trait ReadExt {
     // fn read_i8(&self) -> i8;
     // fn read_i16(&self) -> i16;
     // fn read_i32(&self) -> i32;
@@ -17,7 +17,7 @@ pub trait CursorReadExt {
 }
 
 /// cursor에 대한 write extension
-pub trait CursorWriteExt {
+pub trait WriteExt {
     fn write_i8(&self);
     fn write_i16(&self);
     fn write_i32(&self);
@@ -30,15 +30,15 @@ pub trait CursorWriteExt {
     fn read_ascii(&self);
 }
 
-impl<T> CursorReadExt for Cursor<T>
+impl<R> ReadExt for R
 where
-    T: AsRef<[u8]>,
+    R: Read + ?Sized,
 {
     fn read_u8(&mut self) -> Result<u8, String> {
         let mut buf = [0u8; 1];
-        match self.read(&mut buf) {
-            Ok(_) => Ok(buf[0]),
-            Err(e) => Err(e.to_string()),
-        }
+
+        self.read_exact(&mut buf).map_err(|e| e.to_string())?;
+
+        Ok(buf[0])
     }
 }

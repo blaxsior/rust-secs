@@ -7,7 +7,7 @@ use crate::{
         int2::Secs2Int2, int4::Secs2Int4, int8::Secs2Int8, list::Secs2List, uint1::Secs2Uint1,
         uint2::Secs2Uint2, uint4::Secs2Uint4, uint8::Secs2Uint8,
     },
-    util::cursor_extensions::CursorReadExt,
+    util::io_extensions::ReadExt,
 };
 
 pub fn parse<T>(data: &T) -> Result<Secs2Variant, String>
@@ -19,28 +19,28 @@ where
 }
 
 /// 입력된 데이터를 secs2 형식으로 파싱한다.
-fn parse_impl<T: AsRef<[u8]>>(cursor: &mut Cursor<T>) -> Result<Secs2Variant, String> {
+fn parse_impl<R: Read>(reader: &mut R) -> Result<Secs2Variant, String> {
     // header 첫번째 라인 획득
-    let header_byte = cursor.read_u8()?;
+    let header_byte = reader.read_u8()?;
 
     // header 분석
     let format_code = get_format_code(header_byte)?;
     let length_bytes_no = get_length_bytes_number(header_byte)?;
-    let item_length_bytes = read_item_length_bytes(cursor, length_bytes_no)?;
+    let item_length_bytes = read_item_length_bytes(reader, length_bytes_no)?;
     let item_length = get_item_length(&item_length_bytes);
 
     // list 인 경우 자식으로 처리
     if let Secs2FormatCode::List = format_code {
         let mut items: Vec<Secs2Variant> = Vec::with_capacity(item_length);
         for _ in 1..=item_length {
-            items.push(parse_impl(cursor)?);
+            items.push(parse_impl(reader)?);
         }
 
         Ok(Secs2List::new(items).as_enum())
     } else {
         // 아닌 경우 byte 데이터를 읽어 대상 아이템 생성
         let mut buf = vec![0u8; item_length];
-        cursor
+        reader
             .read_exact(&mut buf)
             .map_err(|e| format!("error occurred when reading bytes: {:#?}", e))?;
 
@@ -92,8 +92,8 @@ fn get_length_bytes_number(byte: u8) -> Result<usize, String> {
 ///
 /// item length bytes을 읽는다.
 ///
-fn read_item_length_bytes<T: AsRef<[u8]>>(
-    cursor: &mut Cursor<T>,
+fn read_item_length_bytes<R: Read>(
+    reader: &mut R,
     length_bytes_no: usize,
 ) -> Result<Vec<u8>, String> {
     if length_bytes_no < 1 || length_bytes_no > 3 {
@@ -104,7 +104,7 @@ fn read_item_length_bytes<T: AsRef<[u8]>>(
     }
 
     let mut buf = vec![0u8; length_bytes_no];
-    cursor
+    reader
         .take(3)
         .read_exact(&mut buf)
         .map_err(|e| format!("error occurred when reading bytes: {:#?}", e))?;
