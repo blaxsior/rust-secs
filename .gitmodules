@@ -1,0 +1,6 @@
+[submodule "secs-ii"]
+	path = secs-ii
+	url = https://github.com/blaxsior/rust-secs-ii.git
+[submodule "secs-transport"]
+	path = secs-transport
+	url = https://github.com/blaxsior/rust-secs-transport.git

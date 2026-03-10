@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "secs-ii", "secs-transport",
+]
+resolver = "3"
