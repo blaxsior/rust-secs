@@ -1,5 +1,9 @@
 [workspace]
 members = [
-    "secs-ii", "secs-transport",
+    "secs-ii", 
+    "secs-transport",
 ]
 resolver = "3"
+[workspace.dependencies]
+secs-ii = { path = "secs-ii" }
+secs-transport = { path = "secs-transport" }
