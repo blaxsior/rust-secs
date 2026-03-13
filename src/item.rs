@@ -23,7 +23,7 @@ use crate::{
     item::{
         ascii::{Secs2ASCII, Secs2ASCIIItem},
         binary::{Secs2Binary, Secs2BinaryItem},
-        boolean::{Secs2Boolean, Secs2BooleanItem, Secs2BooleanItem2},
+        boolean::{Secs2Boolean, Secs2BooleanItem2},
         float4::{Secs2Float4, Secs2Float4Item},
         float8::{Secs2Float8, Secs2Float8Item},
         int1::{Secs2Int1, Secs2Int1Item},
