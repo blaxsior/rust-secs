@@ -67,7 +67,9 @@ block =  **Header + Data**, 최대 254 byte
 </table>
 
 - R bit: 메시지의 방향 (0: Host → EQP, 1: EQP → Host)
-- device ID: 장비를 구분하기 위한 식별자로, host는 0
+- device ID: 장비를 구분하기 위한 식별자. 항상 통신하는 "장비측" ID로 사용
+    - R bit(0): 목적지 = 장비의 ID
+    - R bit(1): 출발지 = 장비의 ID
 - W bit: Secondary Message 대기 여부. multi block은 같은 값이어야 함
 - upper message ID: Stream
 - lower message ID: Function
