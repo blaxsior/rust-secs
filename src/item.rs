@@ -16,6 +16,8 @@ pub mod uint4;
 pub mod uint8;
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use alloc::vec::Vec;
+use alloc::string::String;
 
 use crate::{
     convert::secs2::serialize::Encode,
@@ -155,7 +157,7 @@ impl Secs2Variant {
 }
 
 impl Encode for Secs2Variant {
-    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<(), Secs2Error> {
+    fn encode(&self, w: &mut Vec<u8>) -> Result<(), Secs2Error> {
         use crate::convert::secs2;
         secs2::serialize::serialize_to(w, self)
     }
@@ -257,7 +259,7 @@ mod tests {
             Secs2Variant::ascii(String::from("hello")),
         ]);
 
-        let mut buf = Vec::new();
+        let mut buf: Vec<u8> = Vec::new();
         variant.encode(&mut buf).expect("must be encoded");
 
         assert_eq!(buf, expected);

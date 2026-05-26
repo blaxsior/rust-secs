@@ -3,6 +3,8 @@ use crate::{
     item::{Secs2Item, Secs2Variant},
 };
 
+use alloc::vec::Vec;
+
 pub type Secs2BooleanItem = Vec<u8>;
 pub type Secs2BooleanItem2 = Vec<bool>;
 
@@ -45,8 +47,8 @@ impl Secs2Item for Secs2Boolean {
 }
 
 impl Encode for Secs2Boolean {
-    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<(), crate::error::Secs2Error> {
-        w.write_all(self.items())?;
+    fn encode(&self, w: &mut Vec<u8>) -> Result<(), crate::error::Secs2Error> {
+        w.extend_from_slice(self.items());
         Ok(())
     }
 }

@@ -1,9 +1,8 @@
-use std::io::Write;
-
 use crate::{error::Secs2Error, item::Secs2Variant};
+use alloc::vec::Vec;
 
 pub trait Encode {
-    fn encode<W: Write>(&self, w: &mut W) -> Result<(), Secs2Error>;
+    fn encode(&self, w: &mut Vec<u8>) -> Result<(), Secs2Error>;
 }
 
 ///
@@ -19,29 +18,25 @@ pub fn serialize(data: &Secs2Variant) -> Result<Vec<u8>, Secs2Error> {
 ///
 /// Secs2Variant 객체를 대응되는 buffer에 쓴다.
 ///
-pub fn serialize_to<W>(buffer: &mut W, data: &Secs2Variant) -> Result<(), Secs2Error>
-where
-    W: Write,
-{
+pub fn serialize_to(buffer: &mut Vec<u8>, data: &Secs2Variant) -> Result<(), Secs2Error> {
     serialize_impl(buffer, data)
 }
 
 ///
 /// Secs2Variant 객체의 byte 변환에 대한 구현체
 ///
-fn serialize_impl<W>(buffer: &mut W, data: &Secs2Variant) -> Result<(), Secs2Error>
-where
-    W: Write,
-{
+fn serialize_impl(buffer: &mut Vec<u8>, data: &Secs2Variant) -> Result<(), Secs2Error> {
     let item_length = data.value()?.length();
     let format_code = data.format_code();
 
     // header 데이터 쓰기
-    let length_bytes = encode_length(item_length)?;
-    let header_byte: u8 = u8::from(format_code) << 2 | (length_bytes.len() as u8);
+    let (length_bytes, length_len) = encode_length(item_length)?;
+    let valid_length_slice = &length_bytes[..length_len];
 
-    buffer.write_all(&[header_byte])?;
-    buffer.write_all(&length_bytes)?;
+    let header_byte: u8 = (u8::from(format_code) << 2) | (length_len as u8);
+
+    buffer.push(header_byte);
+    buffer.extend_from_slice(valid_length_slice);
 
     // 실제 데이터 쓰기 작업
 
@@ -79,17 +74,25 @@ where
 ///
 /// 입력된 길이를 byte 배열로 인코딩한 결과를 반환한다.
 ///
-fn encode_length(len: usize) -> Result<Vec<u8>, Secs2Error> {
-    // 3byte를 넘어서는 안됨
+fn encode_length(len: usize) -> Result<([u8; 3], usize), Secs2Error> {
+    // 3byte를 넘어서는 안됨 (0xFFFFFF = 16,777,215 바이트)
     if len > 0xFFFFFF {
         return Err(Secs2Error::InvalidLength(len));
     }
 
+    // 1. 빅엔디안 형태로 3바이트에 쪼개 넣기
     let bytes = [(len >> 16) as u8, (len >> 8) as u8, len as u8];
 
+    // 2. 0이 아닌 최초의 위치 찾기 (길이가 0일 때는 최소 1바이트는 써야 하므로 unwrap_or(2) 유지)
     let start = bytes.iter().position(|&b| b != 0).unwrap_or(2);
 
-    Ok(bytes[start..].to_vec())
+    // 3. 유효한 바이트들만 앞으로 정렬하여 새 배열 생성
+    let mut result = [0u8; 3];
+    let valid_len = 3 - start;
+    result[..valid_len].copy_from_slice(&bytes[start..]);
+
+    // (배열 데이터, 실제 유효한 길이) 반환
+    Ok((result, valid_len))
 }
 
 #[cfg(test)]
@@ -111,21 +114,25 @@ mod tests {
         fn return_bytes_if_length_0() {
             let len = 0x00;
 
-            let result = encode_length(len).expect("must return item");
+            let (bytes, valid_len) = encode_length(len).expect("must return item");
+
+            // 💡 튜플에서 받아온 실제 유효 길이만큼 슬라이스를 떼어내서 검증합니다.
+            let result_slice = &bytes[..valid_len];
 
             // length = 0이어도 byte 길이 1은 보장되어야 함
-            assert_eq!(result.len(), 1);
-            assert_eq!(result[0], 0);
+            assert_eq!(result_slice.len(), 1);
+            assert_eq!(result_slice[0], 0);
         }
 
         #[test]
         fn return_bytes_normal_case() {
             let len = 0xABCDEF;
 
-            let result = encode_length(len).expect("must return item");
+            let (bytes, valid_len) = encode_length(len).expect("must return item");
+            let result_slice = &bytes[..valid_len];
 
-            assert_eq!(result.len(), 3);
-            assert_eq!(result, [0xAB, 0xCD, 0xEF]);
+            assert_eq!(result_slice.len(), 3);
+            assert_eq!(result_slice, [0xAB, 0xCD, 0xEF]);
         }
     }
 

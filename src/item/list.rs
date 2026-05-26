@@ -1,4 +1,5 @@
-use crate::item::{Secs2Variant, Secs2Item};
+use crate::item::{Secs2Item, Secs2Variant};
+use alloc::vec::Vec;
 
 pub type Secs2ListItem = Vec<Secs2Variant>;
 #[derive(Debug)]
@@ -26,6 +27,6 @@ impl Secs2Item for Secs2List {
     }
 
     fn length(&self) -> usize {
-        return self.item.len()
+        return self.item.len();
     }
 }

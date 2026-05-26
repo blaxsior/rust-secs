@@ -1,4 +1,8 @@
-use crate::{convert::secs2::serialize::Encode, item::{Secs2Item, Secs2Variant}};
+use crate::{
+    convert::secs2::serialize::Encode,
+    item::{Secs2Item, Secs2Variant},
+};
+use alloc::vec::Vec;
 
 pub type Secs2Uint8Item = Vec<u64>;
 static SECS2_UINT8_SIZE: usize = 8;
@@ -32,9 +36,9 @@ impl Secs2Item for Secs2Uint8 {
 }
 
 impl Encode for Secs2Uint8 {
-    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<(), crate::error::Secs2Error> {
+    fn encode(&self, w: &mut Vec<u8>) -> Result<(), crate::error::Secs2Error> {
         for v in &self.item {
-            w.write_all(&v.to_be_bytes())?;
+            w.extend_from_slice(&v.to_be_bytes());
         }
 
         Ok(())
@@ -55,7 +59,7 @@ impl TryFrom<&[u8]> for Secs2Uint8 {
                 let mut val = 0u64;
                 for i in 0..SECS2_UINT8_SIZE {
                     val <<= 8;
-                    val |= chunk[i] as u64; 
+                    val |= chunk[i] as u64;
                 }
                 val
             })

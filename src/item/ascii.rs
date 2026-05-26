@@ -1,4 +1,9 @@
-use crate::{convert::secs2::serialize::Encode, item::{Secs2Item, Secs2Variant}};
+use crate::{
+    convert::secs2::serialize::Encode,
+    item::{Secs2Item, Secs2Variant},
+};
+use alloc::string::String;
+use alloc::vec::Vec;
 
 pub type Secs2ASCIIItem = String;
 #[derive(Debug)]
@@ -31,8 +36,8 @@ impl Secs2Item for Secs2ASCII {
 }
 
 impl Encode for Secs2ASCII {
-    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<(), crate::error::Secs2Error> {
-        w.write_all(self.items().as_bytes())?;
+    fn encode(&self, w: &mut Vec<u8>) -> Result<(), crate::error::Secs2Error> {
+        w.extend_from_slice(self.item.as_bytes());
         Ok(())
     }
 }
@@ -41,7 +46,8 @@ impl TryFrom<&[u8]> for Secs2ASCII {
     type Error = &'static str;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        let result = String::from_utf8(value.to_vec()).expect("failed to parse buffer to ascii string");
+        let result =
+            String::from_utf8(value.to_vec()).expect("failed to parse buffer to ascii string");
 
         if result.is_ascii() {
             Ok(Self::new(result))

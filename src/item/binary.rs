@@ -1,5 +1,8 @@
-use crate::{convert::secs2::serialize::Encode, item::{Secs2Item, Secs2Variant}};
-
+use crate::{
+    convert::secs2::serialize::Encode,
+    item::{Secs2Item, Secs2Variant},
+};
+use alloc::vec::Vec;
 pub type Secs2BinaryItem = Vec<u8>;
 #[derive(Debug)]
 pub struct Secs2Binary {
@@ -30,12 +33,11 @@ impl Secs2Item for Secs2Binary {
     }
 }
 impl Encode for Secs2Binary {
-    fn encode<W: std::io::Write>(&self, w: &mut W) -> Result<(), crate::error::Secs2Error> {
-        w.write_all(self.items())?;
+    fn encode(&self, w: &mut Vec<u8>) -> Result<(), crate::error::Secs2Error> {
+        w.extend_from_slice(self.items());
         Ok(())
     }
 }
-
 
 impl TryFrom<&[u8]> for Secs2Binary {
     type Error = &'static str;
