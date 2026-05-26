@@ -5,10 +5,10 @@ use crate::transport::secs1::config::DeviceId;
 ///
 /// SecsTransport 처리 시 예외
 ///
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq, Eq)]
 pub enum SecsTransportError {
     #[error("failed to connect")]
-    ConnectionFailed(#[source]Option<Box<dyn std::error::Error + Send + Sync>>),
+    ConnectionFailed(&'static str),
 
     #[error("failed to send message")]
     SendFailed,
@@ -36,7 +36,7 @@ pub enum SecsTransportError {
     UnknownDeviceId(DeviceId),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum SecsTimeoutType {
     T1,
     T2,

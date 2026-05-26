@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use crate::transport::{error::SecsTransportError, secs1::config::DeviceId};
@@ -8,6 +9,7 @@ const MSB_ONLY: u8 = 0x80;
 ///
 /// SECS-I Block Transfer Protocol 중 사용되는 구조체
 ///
+#[derive(Debug, PartialEq, Eq)]
 pub struct Secs1Block {
     pub header: Secs1BlockHeader,
     pub data: Vec<u8>,
@@ -154,9 +156,4 @@ pub enum Secs1HandshakeCode {
     ACK = 0b00000110,
     // incorrect reception
     NAK = 0b00010101,
-}
-
-pub struct Secs1SendBlockRequest {
-    pub block: Secs1Block,
-    pub sender: tokio::sync::oneshot::Sender<Result<(), SecsTransportError>>,
 }
