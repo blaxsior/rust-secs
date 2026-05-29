@@ -6,5 +6,7 @@ edition = "2024"
 [dependencies]
 num_enum = "0.7.5"
 sans-io-time = "0.2.0"
+sansio = "1.0.1"
+enumset = "1.1.13"
 secs-ii.workspace = true
 thiserror.workspace = true

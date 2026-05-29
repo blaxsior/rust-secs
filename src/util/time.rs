@@ -1,64 +1,72 @@
-use core::time::Duration;
-use sans_io_time::Instant;
+use crate::transport::error::SecsTimeoutUnit;
+use alloc::collections::BTreeMap;
 
-/// 시간에 따른 timer 만료 여부를 판단하기 위한 구조체
+/// 각 타임아웃을 식별하기 위한 키
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TimeoutId(u64);
+
+/// 타임아웃 발생을 표현하는 티켓
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TickTimer {
-    limit: Duration,
-    start_time: Option<Instant>,
+pub struct TimeoutTicket {
+    pub id: TimeoutId,
+    pub timeout: SecsTimeoutUnit,
 }
 
-impl TickTimer {
-    pub const fn new(limit: Duration) -> Self {
+pub struct TimeoutIdGenerator {
+    next: u64,
+}
+
+impl TimeoutIdGenerator {
+    pub fn generate(&mut self) -> TimeoutId {
+        let id = TimeoutId(self.next);
+        self.next = self.next.wrapping_add(1);
+        id
+    }
+}
+
+/// 타임아웃을 다루는 객체
+pub struct TimeoutManager {
+    id_generator: TimeoutIdGenerator,
+    active: BTreeMap<SecsTimeoutUnit, TimeoutId>,
+}
+
+impl TimeoutManager {
+    pub fn new() -> Self {
         Self {
-            limit,
-            start_time: None,
+            id_generator: TimeoutIdGenerator { next: 0 },
+            active: BTreeMap::new(),
         }
     }
 
-    /// 타이머를 시작한다.
-    pub fn start(&mut self, now: Instant) {
-        self.start_time = Some(now);
+    /// timeout을 발행한다.
+    pub fn issue(&mut self, timeout: SecsTimeoutUnit) -> TimeoutTicket {
+        let id: TimeoutId = self.id_generator.generate();
+        self.active.insert(timeout, id);
+        TimeoutTicket { id, timeout }
     }
 
-    /// 타이머를 정지 및 초기화한다.
-    pub fn reset(&mut self) {
-        self.start_time = None;
+    /// timeout을 취소한다.
+    pub fn cancel(&mut self, target: SecsTimeoutUnit) -> bool {
+        self.active.remove(&target).is_some()
     }
 
-    /// 현재 타이머 활성화 여부를 반환한다.
-    pub fn is_active(&self) -> bool {
-        self.start_time.is_some()
+    /// timeout이 아직 활성 상태인지 확인한다.
+    fn is_active(&self, ticket: &TimeoutTicket) -> bool {
+        self.active
+            .get(&ticket.timeout)
+            .is_some_and(|timeout_id| *timeout_id == ticket.id)
     }
 
-    /// time을 주입, 현재 타이머의 만료 여부를 체크한다.
-    pub fn check_timeout(&mut self, now: Instant) -> bool {
-        // timer 활성화되어 있지 않다면 false
-        // 만약 start_time이 Some이면 start 변수에 담아서 로직 수행
-        let Some(start) = self.start_time else {
-            return false;
-        };
-
-        // 경과 시간 계산
-        let elapsed = now - start;
-
-        if elapsed >= self.limit {
-            self.reset(); // 만료 시 자동 리셋
-            true // 만료 신호 반환
+    /// timeout 발생 처리.
+    ///
+    /// timeout이 유효하면 true를 반환하고 제거한다.
+    /// 이미 취소되었거나 다른 timeout으로 재사용된 경우 false를 반환한다.
+    pub fn fire(&mut self, ticket: &TimeoutTicket) -> bool {
+        if self.is_active(ticket) {
+            self.active.remove(&ticket.timeout);
+            true
         } else {
             false
         }
     }
 }
-
-/// 현재 시간을 제공하는 trait
-pub trait TimeProvider {
-    fn get_now(&self) -> Instant;
-}
-
-// pub struct SystemTimeProvider {}
-// impl TimeProvider for SystemTimeProvider {
-//     fn get_now(&self) -> Instant {
-//         Instant::from_nanos(0)
-//     }
-// }

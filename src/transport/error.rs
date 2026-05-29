@@ -20,10 +20,10 @@ pub enum SecsTransportError {
     ConnectionClosed,
 
     #[error("timeout: {0:?}")]
-    Timeout(SecsTimeoutType),
+    Timeout(SecsTimeoutUnit),
 
     #[error("invalid block")]
-    BlockInvalid,
+    InvalidBlock,
 
     #[error("invalid block size {0}")]
     BlockSizeInvalid(u32),
@@ -36,8 +36,8 @@ pub enum SecsTransportError {
     UnknownDeviceId(DeviceId),
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum SecsTimeoutType {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SecsTimeoutUnit {
     T1,
     T2,
     T3,

@@ -5,9 +5,9 @@ use crate::transport::ConnectionMode;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct DeviceId(pub u16);
-/// 
+///
 /// SECS-I 통신 구성 시 사용하는 설정
-/// 
+///
 pub struct Secs1TransportConfig {
     /// 장치 식별자. 통신 장치의 식별 번호
     pub device_id: DeviceId,

@@ -128,12 +128,12 @@ impl TryFrom<&[u8]> for Secs1Block {
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value.len() < 10 || value.len() > 254 {
-            return Err(SecsTransportError::BlockInvalid);
+            return Err(SecsTransportError::InvalidBlock);
         }
 
         let raw_header: [u8; 10] = value[0..10]
             .try_into()
-            .map_err(|_| SecsTransportError::BlockInvalid)?;
+            .map_err(|_| SecsTransportError::InvalidBlock)?;
 
         let header = Secs1BlockHeader::try_from(raw_header)?;
 
