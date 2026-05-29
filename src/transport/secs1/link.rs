@@ -21,13 +21,20 @@ enum Secs1LinkState {
     /// 초기 상태
     IDLE,
     /// 전송 방향 수립 중
-    LINECONTROL,
+    LINECONTROL(LineControlState),
     /// 데이터 전송 중
     SEND(SendState),
     /// 데이터 수신 중
     RECEIVE(ReceiveState), // 수신한 length byte
-    /// 전송 후 종료 단계
+    /// 전송 후 종료 단계. 명세상 존재하나, 각 state에서 바로 IDLE 전이하도록 기능 구현 중
     COMPLETION,
+}
+
+enum LineControlState {
+    /// ENQ 송신 전
+    BeforeSendENQ,
+    /// ENQ 송신 후 EOT or ENQ 수신 대기 중
+    WaitForResponse,
 }
 
 enum ReceiveState {
@@ -152,7 +159,7 @@ impl Secs1LinkMachine {
     pub fn run(&mut self) {
         match self.state {
             Secs1LinkState::IDLE => self.handle_idle(),
-            Secs1LinkState::LINECONTROL => self.handle_line_control(),
+            Secs1LinkState::LINECONTROL(_) => self.handle_line_control(),
             Secs1LinkState::RECEIVE(_) => self.handle_receive(),
             Secs1LinkState::SEND(_) => self.handle_send(),
             Secs1LinkState::COMPLETION => self.handle_completion(),
@@ -183,50 +190,62 @@ impl Secs1LinkMachine {
 
     /// line control state를 처리한다.
     pub fn handle_line_control(&mut self) {
+        if let Secs1LinkState::LINECONTROL(line_control_state) = &self.state {
+            match line_control_state {
+                LineControlState::BeforeSendENQ => {
+                    self.write(self.codebytes(Secs1HandshakeCode::ENQ));
+                    self.state = Secs1LinkState::LINECONTROL(LineControlState::WaitForResponse);
+                    self.start_timeout(SecsTimeoutUnit::T2); // ENQ 송신 후 응답 대기를 위한 T2 timer 시작
+                }
+                LineControlState::WaitForResponse => {
+                    // ENQ 송신 후 상대방의 응답을 기다리는 상태 -> handle_idle과 유사하게 ENQ, EOT 수신 시 처리
+                    while let Some(byte) = self.incoming_buffer.pop_front() {
+                        if let Ok(code) = Secs1HandshakeCode::try_from(byte) {
+                            if self.mode == ConnectionMode::Passive
+                                && code == Secs1HandshakeCode::ENQ
+                            {
+                                // 나는 passive인데 상대에게 ENQ 받음 -> 양보하고 RECEIVE 모드로 전이
+                                self.switch_to_receive();
+                                return;
+                            } else if code == Secs1HandshakeCode::EOT {
+                                // EOT를 정상적으로 받아 SEND 모드로 전이
+                                self.switch_to_send();
+                                return;
+                            }
+                            // 이외 데이터는 버리고, 계속 반복 진행
+                        }
+                    }
+                }
+            }
+        } else {
+            panic!("invalid state: handle_line_control should only be called in LINECONTROL state");
+        }
+
         // 현재 들어온 데이터에 대한 작업 처리 수행
         // 일반적으로는 아무리 길어도 ms 단위 시간만 소요되므로, timeout 발생 전 처리가 가능할 것으로 기대
         // 정석은 timeout도 while 문 내부에서 체크
-        while let Some(byte) = self.incoming_buffer.pop_front() {
-            if let Ok(code) = Secs1HandshakeCode::try_from(byte) {
-                if code == Secs1HandshakeCode::ENQ && self.mode == ConnectionMode::Passive {
-                    // 나는 passive인데 상대에게 ENQ 받음 -> 양보하고 RECEIVE 모드로 전이
-                    self.switch_to_receive();
-                    return;
-                } else if code == Secs1HandshakeCode::EOT {
-                    // EOT를 정상적으로 받아 SEND 모드로 전이
-                    self.switch_to_send();
-                    return;
-                }
-                // 이외 데이터는 버리고, 계속 반복 진행
-            }
-        }
     }
 
     fn retrigger_line_control(&mut self) {
-        // 기본 상태를 line control로 복구, 타임아웃이 남아 있다면 제거
-        self.state = Secs1LinkState::LINECONTROL;
         self.cancel_timeout(SecsTimeoutUnit::T2);
         self.current_retry += 1;
 
         // FAILED SEND case
         if self.current_retry > self.max_retry {
             // retry 횟수 초과 -> 상위에 timeout 발생 알리고 IDLE 복귀
-
             self.state = Secs1LinkState::IDLE; // retry 횟수 초과 시 idle 상태로 복귀
             self.current_retry = 0; // retry 0으로 초기화(필수는 아니나, 오류 막기 위한 목적)
             self.emit_event(Secs1LinkEvent::LineControlFailed);
         } else {
+            // 상태를 line control로 복구, 타임아웃이 남아 있다면 제거
+            self.state = Secs1LinkState::LINECONTROL(LineControlState::BeforeSendENQ);
             self.emit_event(Secs1LinkEvent::Retry(self.current_retry));
-            self.start_timeout(SecsTimeoutUnit::T2); // retry인 경우 timeout 재시작
         }
     }
 
     pub fn switch_to_line_control(&mut self) {
-        self.state = Secs1LinkState::LINECONTROL;
         self.current_retry = 0;
-        self.start_timeout(SecsTimeoutUnit::T2);
-
-        self.write(self.codebytes(Secs1HandshakeCode::ENQ));
+        self.state = Secs1LinkState::LINECONTROL(LineControlState::BeforeSendENQ);
     }
 
     /// send state를 처리한다.
@@ -436,15 +455,21 @@ impl Protocol<&[u8], Secs1Block, Secs1LinkEvent> for Secs1LinkMachine {
     }
 
     /// timeout 발생 시 처리
-    fn handle_timeout(&mut self, now: Self::Time) -> Result<(), Self::Error> {
+    fn handle_timeout(&mut self, timeticket: Self::Time) -> Result<(), Self::Error> {
         // 1. _now에서 타임아웃 유닛 추출 (구조체에 맞게 메서드 호출)
         // 예: let expired_unit = now.get_timeout_unit();
-        let expired_unit = now.timeout;
+        let expired_unit = timeticket.timeout;
+
+        let is_timeout_valid = self.timeout_manager.fire(&timeticket);
+        if !is_timeout_valid {
+            // 이미 취소된 타임아웃인 경우 -> 무시
+            return Ok(());
+        }
 
         // 2. 상태(State)와 유닛(Unit)을 튜플로 묶어서 매칭
         match (&self.state, expired_unit) {
             // LINECONTROL or SEND 상태 & T2 타임아웃
-            (Secs1LinkState::LINECONTROL, SecsTimeoutUnit::T2)
+            (Secs1LinkState::LINECONTROL(_), SecsTimeoutUnit::T2)
             | (Secs1LinkState::SEND(_), SecsTimeoutUnit::T2) => self.retrigger_line_control(),
 
             // RECEIVE 상태 & T2 타임아웃 (WaitingLength)
