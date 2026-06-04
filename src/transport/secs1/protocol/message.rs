@@ -1,6 +1,5 @@
 use crate::{
     transport::{
-        ConnectionMode,
         error::{SecsTimeoutUnit, SecsTransportError},
         secs1::{
             block::{Secs1Block, Secs1BlockHeader},
@@ -13,26 +12,116 @@ use crate::{
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use sansio::Protocol;
-use secs_ii::item::{Secs2Item, Secs2Variant};
+use secs_ii::item::Secs2Variant;
+
+// 현재 transaction ID 값
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct TransactionId(pub u32);
 
 /// secs-i message protocol 수행 중 발생하는 이벤트
 pub enum Secs1MessageProtocolEvent {
     /// 블록을 성공적으로 송신
     BlockSent { header: Secs1BlockHeader },
+    /// 블록을 성공적으로 수신
+    BlockReceived { header: Secs1BlockHeader },
 
+    /// 메시지를 성공적으로 송신
+    MessageSent { transaction_id: TransactionId },
+    /// 메시지를 성공적으로 수신
+    MessageReceived { transaction_id: TransactionId },
+
+    /// 송신 대기 중인 메시지가 타임아웃 발생
+    MessageSendTimeout {
+        transaction_id: TransactionId,
+        timeout_unit: SecsTimeoutUnit,
+    },
+    /// 수신 대기 중인 메시지가 타임아웃 발생
+    MessageReceiveTimeout {
+        transaction_id: TransactionId,
+        timeout_unit: SecsTimeoutUnit,
+    },
 }
 
-pub enum Secs1MessageState {
+/// 트랜잭션 상 역할
+pub enum TransactionRole {
+    /// PRIMARY 보냄: SEND -> WAIT_REPLY -> RESPONSE(if needed)
+    Initiator,
+    /// PRIMARY 응답: RECV -> SEND case
+    Responder,
+}
+
+pub enum Secs1MessageTransactionState {
+    /// 트랜잭션 생성 초기 상태 (구체적인 전이 전 상태)
     Idle,
-    /// Message 수신 중 (T4 대기)
+    /// 메시지를 전송 중인 상태
+    Sending {
+        /// 전송해야 할 블록 목록
+        blocks: Vec<Secs1Block>,
+        /// 전송할 block의 인덱스 (0부터 시작)
+        vec_idx: usize,
+    },
+
+    /// Primary 전송 후 Secondary Message 대기 중 (T3: reply Timer)
+    WaitingForReply { expected_header: Secs1BlockHeader },
+
+    /// Message 수신 중인 상태 (T4: inter block timer)
     Receiving {
         expected_header: Secs1BlockHeader,
-        blocks: Vec<u8>,
+        blocks: Vec<Secs1Block>,
     },
-    /// Primary 전송 후 Secondary Message 대기 중 (T3 대기)
-    WaitingForReply {
-        expected_header: Secs1BlockHeader,
-    },
+}
+
+impl Secs1MessageTransactionState {
+    /// recv 모드로 진입한다.
+    pub fn switch_to_receive(&mut self, block: Secs1Block) {
+        *self = Secs1MessageTransactionState::Receiving {
+            expected_header: block.header.clone(),
+            blocks: vec![block],
+        };
+    }
+
+    /// recv 모드에서 아이템을 추가한다.
+    pub fn recv_next(&mut self, block: Secs1Block) {
+        if let Secs1MessageTransactionState::Receiving {
+            expected_header,
+            blocks,
+        } = self
+        {
+            *expected_header = block.header.clone();
+            blocks.push(block);
+        }
+    }
+
+    // pub fn is_complete(&self) -> bool {
+    //     match self {
+    //         Secs1MessageTransactionState::Receiving {
+    //             expected_header, ..
+    //         } => expected_header.is_end(),
+    //         _ => false,
+    //     }
+    // }
+}
+
+/// 트랜잭션을 표현하는 객체
+pub struct Secs1MessageTransaction {
+    /// 트랜잭션에 부여된 system byte 값
+    id: TransactionId,
+    /// 트랜잭션 역할
+    role: TransactionRole,
+    /// 트랜잭션 진행 상태
+    state: Secs1MessageTransactionState,
+    last_header: Option<Secs1BlockHeader>
+}
+
+impl Secs1MessageTransaction {
+    pub fn new(id: TransactionId, role: TransactionRole) -> Self {
+        Self {
+            id,
+            role,
+            state: Secs1MessageTransactionState::Idle,
+            last_header: None
+        }
+    }
 }
 
 pub struct Secs1MessageProtocolMachine {
@@ -52,14 +141,10 @@ pub struct Secs1MessageProtocolMachine {
     event_queue: VecDeque<Secs1MessageProtocolEvent>,
 
     timeout_manager: TimeoutManager,
-    /** 내부 상태 값 */
-    /// SECS-I message protocol current state
-    state: Secs1MessageState,
-    /// 중복 수신 방지용 헤더 정보
-    last_header: Option<Secs1BlockHeader>,
-
     /// 통신 중인 디바이스의 ID
     device_id: DeviceId,
+    /// 다음에 사용할 트랜잭션 ID
+    system_byte_counter: TransactionId,
 }
 
 impl Secs1MessageProtocolMachine {
@@ -72,48 +157,51 @@ impl Secs1MessageProtocolMachine {
             outgoing_timeout_queue: VecDeque::new(),
             event_queue: VecDeque::new(),
             timeout_manager: TimeoutManager::new(),
-            state: Secs1MessageState::Idle,
-            last_header: None,
             device_id: config.device_id.clone(),
+            system_byte_counter: TransactionId(1),
         }
     }
 
-    fn run(&mut self) {
+    pub fn get_transaction_id() {
 
     }
 
-        /// device id가 알려진 장치인지 체크
+    fn run(&mut self) {}
+
+    /// device id가 알려진 장치인지 체크
     fn is_known_device(&self, device_id: &DeviceId) -> bool {
         self.device_id == *device_id
     }
 
-    /// 헤더가 이전에 수신한 헤더와 동일한지 체크 (중복 수신 방지)
-    fn is_duplicate(&self, header: &Secs1BlockHeader) -> bool {
-        if let Some(last) = &self.last_header {
-            return last == header;
-        }
-        return false;
-    }
+    // /// 헤더가 이전에 수신한 헤더와 동일한지 체크 (중복 수신 방지)
+    // fn is_duplicate(&self, header: &Secs1BlockHeader) -> bool {
+    //     if let Some(last) = &self.last_header {
+    //         return last == header;
+    //     }
+    //     return false;
+    // }
 
-    /// 헤더가 현재 기대하는 헤더인지 체크
-    fn is_expected(&self, header: &Secs1BlockHeader) -> bool {
-        match &self.state {
-            Secs1MessageState::Receiving {
-                expected_header, ..
-            } => expected_header == header,
-            Secs1MessageState::WaitingForReply { expected_header } => expected_header == header,
-            _ => false,
-        }
-    }
+    // /// 헤더가 현재 기대하는 헤더인지 체크
+    // fn is_expected(&self, header: &Secs1BlockHeader) -> bool {
+    //     match &self.state {
+    //         Secs1MessageTransactionState::Receiving {
+    //             expected_header, ..
+    //         } => expected_header == header,
+    //         Secs1MessageTransactionState::WaitingForReply { expected_header } => {
+    //             expected_header == header
+    //         }
+    //         _ => false,
+    //     }
+    // }
 
-    fn is_primary_first_block(&self, header: &Secs1BlockHeader) -> bool {
-        header.is_primary() && header.is_first_block()
-    }
+    // fn is_primary_first_block(&self, header: &Secs1BlockHeader) -> bool {
+    //     header.is_primary() && header.is_first_block()
+    // }
 
-    fn reset_to_idle(&mut self) {
-        self.timeout_manager.cancel(SecsTimeoutUnit::T3);
-        self.state = Secs1MessageState::Idle;
-    }
+    // fn reset_to_idle(&mut self) {
+    //     self.timeout_manager.cancel(SecsTimeoutUnit::T3);
+    //     self.state = Secs1MessageTransactionState::Idle;
+    // }
 }
 
 impl Protocol<Secs1Block, Secs2Variant, Secs1MessageProtocolEvent> for Secs1MessageProtocolMachine {
