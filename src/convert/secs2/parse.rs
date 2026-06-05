@@ -9,6 +9,7 @@ use crate::{
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use alloc::format;
 
 pub fn parse<T>(data: &T) -> Result<Secs2Variant, String>
 where
