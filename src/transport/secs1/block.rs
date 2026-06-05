@@ -1,7 +1,8 @@
 use alloc::vec::Vec;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use secs_ii::{FunctionId, StreamId};
 
-use crate::transport::{error::SecsTransportError, secs1::config::DeviceId};
+use crate::transport::{TransactionId, error::SecsTransportError, secs1::config::DeviceId};
 
 const WITHOUT_MSB: u8 = 0x7F;
 const MSB_ONLY: u8 = 0x80;
@@ -15,10 +16,12 @@ pub struct Secs1Block {
     pub data: Vec<u8>,
 }
 
+
+
 ///
 /// SECS-I block header을 표현하는 구조체
 ///
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Secs1BlockHeader {
     /// reverse bit. eqp -> host인 경우 true
     pub rbit: bool,
@@ -27,15 +30,15 @@ pub struct Secs1BlockHeader {
 
     /// wait bit. primary msg에 대한 응답이 필요한 경우 true
     pub wbit: bool,
-    pub stream: u8,
-    pub function: u8,
+    pub stream: StreamId,
+    pub function: FunctionId,
 
     /// end bit. 마지막 block인 경우 true
     pub ebit: bool,
     /// block 번호. 단일 block은 0 허용, 아니면 1부터 시작하여 1씩 증가
     pub block_no: u16,
     /// block transfer에 대한 트랜잭션을 식별하기 위한 byte 정보
-    pub system_bytes: u32,
+    pub system_bytes: TransactionId,
 }
 
 impl Secs1BlockHeader {
@@ -45,13 +48,13 @@ impl Secs1BlockHeader {
         h[0] = ((self.rbit as u8) << 7) | ((self.device_id.0 >> 8) as u8 & WITHOUT_MSB);
         h[1] = self.device_id.0 as u8;
 
-        h[2] = ((self.wbit as u8) << 7) | (self.stream & WITHOUT_MSB);
-        h[3] = self.function;
+        h[2] = ((self.wbit as u8) << 7) | (self.stream.0 & WITHOUT_MSB);
+        h[3] = self.function.0;
 
         h[4] = ((self.ebit as u8) << 7) | ((self.block_no >> 8) as u8 & WITHOUT_MSB);
         h[5] = self.block_no as u8;
 
-        h[6..10].copy_from_slice(&self.system_bytes.to_be_bytes());
+        h[6..10].copy_from_slice(&self.system_bytes.0.to_be_bytes());
 
         h
     }
@@ -68,7 +71,7 @@ impl Secs1BlockHeader {
 
     /// primary message인지 여부
     pub fn is_primary(&self) -> bool {
-        self.function % 2 == 1
+        (self.function.0 % 2) != 0
     }
 
     /// 첫번째 block인지 여부
@@ -86,13 +89,13 @@ impl TryFrom<[u8; 10]> for Secs1BlockHeader {
             device_id: DeviceId(u16::from_be_bytes([h[0] & WITHOUT_MSB, h[1]])),
 
             wbit: h[2] & MSB_ONLY != 0,
-            stream: h[2] & WITHOUT_MSB,
-            function: h[3],
+            stream: StreamId(h[2] & WITHOUT_MSB),
+            function: FunctionId(h[3]),
 
             ebit: h[4] & MSB_ONLY != 0,
             block_no: u16::from_be_bytes([h[4] & WITHOUT_MSB, h[5]]),
 
-            system_bytes: u32::from_be_bytes([h[6], h[7], h[8], h[9]]),
+            system_bytes: TransactionId(u32::from_be_bytes([h[6], h[7], h[8], h[9]])),
         })
     }
 }

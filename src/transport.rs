@@ -1,38 +1,37 @@
-use secs_ii::item::Secs2Variant;
-
-use crate::transport::error::SecsTransportError;
-
 pub mod error;
 pub mod secs1;
 
-// pub trait SecsTransport {
-//     // fn open(&mut self) -> impl std::future::Future<Output = Result<(), SecsTransportError>> + Send; // 포트 열기 또는 소켓 Connect
-//     // fn close(&mut self)
-//     // -> impl std::future::Future<Output = Result<(), SecsTransportError>> + Send;
+// 현재 transaction ID 값
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TransactionId(pub u32);
 
-//     ///
-//     /// 데이터를 stream 형식으로 수신한다.
-//     /// 
-//     fn recv(
-//         &mut self,
-//     ) -> impl Future<Output = Result<Secs2Variant, SecsTransportError>>;
+impl TransactionId {
+    /// 다음 트랜잭션 id를 얻는다
+    pub fn next(&self) -> Self {
+        // id = 0인 케이스는 제외
+        TransactionId(self.0.wrapping_add(1).max(1))
+    }
+}
 
-//     ///
-//     /// 입력된 데이터를 전송한다.
-//     ///
-//     fn send(
-//         &mut self,
-//         item: Secs2Variant,
-//     ) -> impl std::future::Future<Output = Result<(), SecsTransportError>> + Send;
-// }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SecsTimeoutUnit {
+    /// inter character timeout: 메시지 내 문자 간 timeout
+    T1,
+    /// protocol timeout: 제어문자 보낸 후 응답 제어문자 도착
+    T2,
+    /// reply timeout: Primary Message 송신 ~ Secondary Message 수신
+    T3(TransactionId),
+    /// inter block timeout: 멀티 블록 전송 시 block 수신 간 간격
+    T4(TransactionId),
+}
 
 ///
 /// SECS 통신 시 역할
-/// 
+///
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionMode {
     /// 요청을 시도하는 측 (= master / host)
     Active, // = Master
     /// 요청에 응답하는 측 (= slave / eqp)
-    Passive
+    Passive,
 }

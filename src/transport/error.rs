@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::transport::secs1::config::DeviceId;
+use crate::transport::{SecsTimeoutUnit, secs1::{block::Secs1BlockHeader, config::DeviceId}};
 
 ///
 /// SecsTransport 처리 시 예외
@@ -25,21 +25,13 @@ pub enum SecsTransportError {
     #[error("invalid block")]
     InvalidBlock,
 
-    #[error("invalid block size {0}")]
-    BlockSizeInvalid(u32),
-
-    /// 보낼 아이템이 없음. 정말 특이한 상황
-    #[error("no item to send")]
-    NothingToSend,
+    #[error("invalid block {0:?}")]
+    UnexpectedBlock(Secs1BlockHeader),
 
     #[error("unknown device id: {0:?}")]
     UnknownDeviceId(DeviceId),
+
+    #[error("invalid status")]
+    InvalidState,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SecsTimeoutUnit {
-    T1,
-    T2,
-    T3,
-    T4,
-}

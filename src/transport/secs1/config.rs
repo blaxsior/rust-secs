@@ -3,7 +3,7 @@ use core::time::Duration;
 use crate::transport::ConnectionMode;
 
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct DeviceId(pub u16);
 ///
 /// SECS-I 통신 구성 시 사용하는 설정
