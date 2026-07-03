@@ -28,7 +28,7 @@ impl TimeoutIdGenerator {
 /// 타임아웃을 다루는 객체
 pub struct TimeoutManager {
     id_generator: TimeoutIdGenerator,
-    active: BTreeMap<SecsTimeoutUnit, TimeoutId>,
+    active: BTreeMap<SecsTimeoutUnit, TimeoutTicket>,
 }
 
 impl TimeoutManager {
@@ -42,8 +42,9 @@ impl TimeoutManager {
     /// timeout을 발행한다.
     pub fn issue(&mut self, timeout: SecsTimeoutUnit) -> TimeoutTicket {
         let id: TimeoutId = self.id_generator.generate();
-        self.active.insert(timeout, id);
-        TimeoutTicket { id, timeout }
+        let ticket = TimeoutTicket { id, timeout };
+        self.active.insert(timeout, ticket);
+        ticket
     }
 
     /// timeout을 취소한다.
@@ -55,7 +56,7 @@ impl TimeoutManager {
     fn is_active(&self, ticket: &TimeoutTicket) -> bool {
         self.active
             .get(&ticket.timeout)
-            .is_some_and(|timeout_id| *timeout_id == ticket.id)
+            .is_some_and(|t| *t == *ticket)
     }
 
     /// timeout 발생 처리.

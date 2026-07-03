@@ -3,7 +3,7 @@ use crate::{
         ConnectionMode, SecsTimeoutUnit,
         error::SecsTransportError,
         secs1::{
-            block::{self, Secs1Block, Secs1BlockHeader, Secs1HandshakeCode},
+            block::{Secs1Block, Secs1BlockHeader, Secs1HandshakeCode},
             config::Secs1TransportConfig,
         },
     },
@@ -276,6 +276,7 @@ impl Secs1BlockTransferMachine {
         };
 
         bytes.extend_from_slice(&checksum_bytes);
+        self.write(bytes);
         self.state = Secs1BlockTransferState::SEND(SendState::WaitForAck);
         self.start_timeout(SecsTimeoutUnit::T2);
     }
@@ -439,6 +440,7 @@ impl Protocol<&[u8], Secs1Block, Secs1BlockTransferEvent> for Secs1BlockTransfer
 
     fn handle_read(&mut self, msg: &[u8]) -> Result<(), Self::Error> {
         self.incoming_buffer.extend(msg);
+        self.run();
         Ok(())
     }
 
@@ -448,6 +450,7 @@ impl Protocol<&[u8], Secs1Block, Secs1BlockTransferEvent> for Secs1BlockTransfer
 
     fn handle_write(&mut self, msg: Secs1Block) -> Result<(), Self::Error> {
         self.incoming_blocks.push_back(msg);
+        self.run();
         Ok(())
     }
 
@@ -516,9 +519,10 @@ impl Protocol<&[u8], Secs1Block, Secs1BlockTransferEvent> for Secs1BlockTransfer
     }
 
     fn handle_event(&mut self, _evt: Secs1BlockTransferEvent) -> Result<(), Self::Error> {
-        todo!()
         // 외부에서 받을 데이터가 있는지 고민 중.
         // timeout 개념이 존재해서 "즉시" 초기화 필요한 경우가 드물다.
+        self.run();
+        Ok(())
     }
 
     /// 외부 시스템에서 전송할 메시지를 가져간다.

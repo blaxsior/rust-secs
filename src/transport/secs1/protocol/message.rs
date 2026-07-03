@@ -1,15 +1,15 @@
-use core::panic;
+use core::{panic, time};
 
 use crate::{
     transport::{
-        SecsTimeoutUnit, TransactionId,
+        ConnectionMode, SecsTimeoutUnit, TransactionId,
         error::SecsTransportError,
         secs1::{
             block::{Secs1Block, Secs1BlockHeader},
             config::{DeviceId, Secs1TransportConfig},
         },
     },
-    util::time::{TimeoutId, TimeoutManager, TimeoutTicket},
+    util::time::{TimeoutManager, TimeoutTicket},
 };
 
 use alloc::collections::BTreeMap;
@@ -35,13 +35,8 @@ pub enum Secs1MessageEvent {
     /// 메시지를 성공적으로 수신
     MessageReceived { transaction_id: TransactionId },
 
-    /// 송신 대기 중인 메시지가 타임아웃 발생
-    MessageSendTimeout {
-        transaction_id: TransactionId,
-        timeout_unit: SecsTimeoutUnit,
-    },
-    /// 수신 대기 중인 메시지가 타임아웃 발생
-    MessageReceiveTimeout {
+    /// 메시지 송수신 중 타임아웃 발생
+    MessageTimeout {
         transaction_id: TransactionId,
         timeout_unit: SecsTimeoutUnit,
     },
@@ -62,7 +57,7 @@ pub enum Secs1MessageTransactionState {
     /// 트랜잭션 생성 초기 상태 (구체적인 전이 전 상태)
     Idle,
     /// 메시지를 전송 중인 상태
-    Sending {
+    Send {
         /// 전송해야 할 블록 목록
         blocks: Vec<Secs1Block>,
         /// 전송할 block의 인덱스 (0부터 시작)
@@ -104,15 +99,6 @@ impl Secs1MessageTransactionState {
             blocks.push(block);
         }
     }
-
-    // pub fn is_complete(&self) -> bool {
-    //     match self {
-    //         Secs1MessageTransactionState::Receiving {
-    //             expected_header, ..
-    //         } => expected_header.is_end(),
-    //         _ => false,
-    //     }
-    // }
 }
 
 // 트랜잭션에 의한 처리가 필요한 경우
@@ -127,34 +113,40 @@ pub enum Secs1TransactionEffect {
 pub struct Secs1MessageTransaction {
     /// 트랜잭션에 부여된 system byte 값
     id: TransactionId,
-    /// 트랜잭션 역할
-    role: TransactionRole,
     /// 트랜잭션 진행 상태
     state: Secs1MessageTransactionState,
     last_header: Option<Secs1BlockHeader>,
 }
 
 impl Secs1MessageTransaction {
-    pub fn new(id: TransactionId, role: TransactionRole) -> Self {
+    pub fn new(id: TransactionId) -> Self {
         Self {
             id,
-            role,
             state: Secs1MessageTransactionState::Idle,
             last_header: None,
         }
     }
 
     pub fn handle_receive(&mut self, block: Secs1Block) -> Result<(), SecsTransportError> {
-        // 중복 block 발생 -> discard
+        // 중복 block 발생 -> discard 후 recv 대기
         if self.is_duplicate(&block.header) {
             return Ok(());
         }
         // 정상적인 블록 -> dup check를 위한 헤더 저장
         self.last_header = Some(block.header);
 
+        // 기대한 블록이 아닌 경우
         if !self.is_expected(&block.header) {
-            // 에러 발생!
-            return Err(SecsTransportError::UnexpectedBlock(block.header));
+            // primary first 아님 -> Block Error 발생
+            if !block.header.is_primary() || !block.header.is_first_block() {
+                return Err(SecsTransportError::UnexpectedBlock(block.header));
+            }
+
+            if !block.header.is_end() {
+                // 마지막 블록 X
+            } else {
+                // 마지막 블록 O -> 메시지 정상 수신
+            }
         }
 
         match self.state {
@@ -163,6 +155,15 @@ impl Secs1MessageTransaction {
             _ => panic!("unreachable code"),
         };
         Ok(())
+    }
+
+    pub fn poll_send(&mut self) -> Option<Secs1Block> {
+        match &self.state {
+            Secs1MessageTransactionState::Send { blocks, vec_idx } => {
+                return None;
+            }
+            _ => None,
+        }
     }
 
     /// 기대한 블록이 맞는지 체크
@@ -185,23 +186,6 @@ impl Secs1MessageTransaction {
         }
         return false;
     }
-
-    // /// 헤더가 현재 기대하는 헤더인지 체크
-    // fn is_expected(&self, header: &Secs1BlockHeader) -> bool {
-    //     match &self.state {
-    //         Secs1MessageTransactionState::Receiving {
-    //             expected_header, ..
-    //         } => expected_header == header,
-    //         Secs1MessageTransactionState::WaitingForReply { expected_header } => {
-    //             expected_header == header
-    //         }
-    //         _ => false,
-    //     }
-    // }
-
-    // fn is_primary_first_block(&self, header: &Secs1BlockHeader) -> bool {
-    //     header.is_primary() && header.is_first_block()
-    // }
 
     // fn reset_to_idle(&mut self) {
     //     self.timeout_manager.cancel(SecsTimeoutUnit::T3);
@@ -235,6 +219,9 @@ pub struct Secs1MessageMachine {
     timeout_manager: TimeoutManager,
     /// 통신 중인 디바이스의 ID
     device_id: DeviceId,
+    /// 연결 모드 -> active or passive
+    role: ConnectionMode,
+
     /// 다음에 사용할 트랜잭션 ID
     next_transaction_id: TransactionId,
     transaction_map: BTreeMap<TransactionId, Secs1MessageTransaction>,
@@ -253,6 +240,7 @@ impl Secs1MessageMachine {
             outgoing_events: VecDeque::new(),
             timeout_manager: TimeoutManager::new(),
             device_id: config.device_id,
+            role: config.mode,
             next_transaction_id: TransactionId(1),
             transaction_map: BTreeMap::new(),
         }
@@ -273,21 +261,20 @@ impl Secs1MessageMachine {
         self.timeout_manager.cancel(timeout);
     }
 
-    pub fn generate_transaction_id(&mut self) -> TransactionId {
+    /// transaction_id를 만든다
+    fn generate_transaction_id(&mut self) -> TransactionId {
         let current = self.next_transaction_id;
-        self.next_transaction_id = self.next_transaction_id.next();
+        self.next_transaction_id = current.next();
         return current;
     }
 
     pub fn run(&mut self) {
         // 1. 전달된 timeout 처리
         self.process_timeout();
-        // 2. 전달된 이벤트 처리(timeout과 유사)
+        // 2. 전달된 이벤트 처리 -> 블록 전송 상태 체크 -> send 재개 작업
         self.process_signal();
-        // 1. receive 상태 처리
+        // 3. receive 상태 처리
         self.process_receive();
-        // 2. signal 처리 및 signal 상태 전이
-        self.process_send();
     }
 
     fn process_receive(&mut self) {
@@ -300,16 +287,16 @@ impl Secs1MessageMachine {
                 continue;
             }
 
-            let mut transaction = match self.find_transaction(&transaction_id) {
-                Some(tx) => tx,
-                None => {
-                    // 적절한 예외처리 후 continue 진행.
-                    // 존재하지 않는 transaction_id가 도착하는 경우는 거의 없음
-                    continue;
-                }
-            };
+            // 기존 트랜잭션이 있나? 없으면 생성 후 대응
+            let transaction = self
+                .transaction_map
+                .entry(transaction_id)
+                .or_insert_with(|| Secs1MessageTransaction::new(transaction_id));
 
-            transaction.handle_receive(block);
+            let result = transaction.handle_receive(block);
+            if let Err(error) = result {
+                self.emit_event(Secs1MessageEvent::ErrorOccured { error });
+            }
         }
     }
 
@@ -323,9 +310,35 @@ impl Secs1MessageMachine {
         self.remove_transaction(&block.header.system_bytes);
     }
 
-    fn process_send(&mut self) {}
+    fn process_timeout(&mut self) {
+        // 1. _now에서 타임아웃 유닛 추출 (구조체에 맞게 메서드 호출)
+        while let Some(ticket) = self.incoming_timeouts.pop_front() {
+            let is_timeout_valid = self.timeout_manager.fire(&ticket);
+            if !is_timeout_valid {
+                // 이미 취소된 타임아웃인 경우 -> 무시
+                continue;
+            }
 
-    fn process_timeout(&mut self) {}
+            let timeout = ticket.timeout;
+
+            let transaction_id = match timeout {
+                SecsTimeoutUnit::T3(id) => id,
+                SecsTimeoutUnit::T4(id) => id,
+                _ => panic!("unexpected timeout state {:?}", ticket),
+            };
+
+            // 타임아웃 발생 -> 해당 transaction abort = 제거 처리 후 이벤트 발생
+            if self.find_transaction(&transaction_id).is_some() {
+                self.remove_transaction(&transaction_id);
+                self.emit_event(Secs1MessageEvent::MessageTimeout {
+                    transaction_id,
+                    timeout_unit: ticket.timeout,
+                });
+            };
+
+            // timeout 발생 -> 대상 트랜잭션 abort 처리
+        }
+    }
 
     // 외부 signal에 대해 아이템을 처리한다.
     fn process_signal(&mut self) {}
@@ -372,47 +385,8 @@ impl Protocol<Secs1Block, SecsMessage, Secs1MessageSignal> for Secs1MessageMachi
 
     /// timeout 발생 시 처리
     fn handle_timeout(&mut self, timeticket: Self::Time) -> Result<(), Self::Error> {
-        // 1. _now에서 타임아웃 유닛 추출 (구조체에 맞게 메서드 호출)
-        // 예: let expired_unit = now.get_timeout_unit();
-        let expired_unit = timeticket.timeout;
-
-        let is_timeout_valid = self.timeout_manager.fire(&timeticket);
-        if !is_timeout_valid {
-            // 이미 취소된 타임아웃인 경우 -> 무시
-            return Ok(());
-        }
-
-        // 2. 상태(State)와 유닛(Unit)을 튜플로 묶어서 매칭
-        // match (&self.state, expired_unit) {
-        //     // LINECONTROL or SEND 상태 & T2 타임아웃
-        //     (Secs1BlockTransferState::LINECONTROL, SecsTimeoutUnit::T2)
-        //     | (Secs1BlockTransferState::SEND(_), SecsTimeoutUnit::T2) => {
-        //         self.retrigger_line_control()
-        //     }
-
-        //     // RECEIVE 상태 & T2 타임아웃 (WaitingLength)
-        //     (
-        //         Secs1BlockTransferState::RECEIVE(ReceiveState::WaitingLength),
-        //         SecsTimeoutUnit::T2,
-        //     ) => {
-        //         self.emit_event(Secs1BlockTransferEvent::ReceiveFailed {
-        //             error: SecsTransportError::Timeout(SecsTimeoutUnit::T2),
-        //         });
-        //         self.completion_with_send_nak(SecsTimeoutUnit::T2);
-        //     }
-        //     // RECEIVE 상태 & T1 타임아웃 (WaitingData or InvalidBlock)
-        //     (
-        //         Secs1BlockTransferState::RECEIVE(ReceiveState::WaitingData { .. }),
-        //         SecsTimeoutUnit::T1,
-        //     )
-        //     | (Secs1BlockTransferState::RECEIVE(ReceiveState::InvalidBlock), SecsTimeoutUnit::T1) =>
-        //     {
-        //         self.completion_with_send_nak(SecsTimeoutUnit::T1);
-        //     }
-        //     // 상태와 타임아웃 유닛이 매칭되지 않으면 무시
-        //     _ => {}
-        // }
-
+        self.incoming_timeouts.push_back(timeticket);
+        self.run();
         Ok(())
     }
 

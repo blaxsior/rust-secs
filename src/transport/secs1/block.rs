@@ -16,6 +16,54 @@ pub struct Secs1Block {
     pub data: Vec<u8>,
 }
 
+impl Secs1Block {
+    // pub fn new(header: Secs1BlockHeader, )
+
+    pub fn checksum(&self) -> u16 {
+        self.header
+            .to_bytes()
+            .iter()
+            .chain(self.data.iter())
+            .fold(0u16, |acc, b| acc.wrapping_add(*b as u16))
+    }
+
+    pub fn verify_checksum(&self, expected: u16) -> bool {
+        self.checksum() == expected
+    }
+
+    /// bytes 배열로 변환
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let header = self.header.to_bytes();
+
+        let mut buf = Vec::with_capacity(header.len() + self.data.len());
+
+        buf.extend_from_slice(&header);
+        buf.extend_from_slice(&self.data);
+
+        buf
+    }
+}
+
+impl TryFrom<&[u8]> for Secs1Block {
+    type Error = SecsTransportError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        if value.len() < 10 || value.len() > 254 {
+            return Err(SecsTransportError::InvalidBlock);
+        }
+
+        let raw_header: [u8; 10] = value[0..10]
+            .try_into()
+            .map_err(|_| SecsTransportError::InvalidBlock)?;
+
+        let header = Secs1BlockHeader::try_from(raw_header)?;
+
+        Ok(Self {
+            header,
+            data: value[10..].to_vec(),
+        })
+    }
+}
 
 
 ///
@@ -96,53 +144,6 @@ impl TryFrom<[u8; 10]> for Secs1BlockHeader {
             block_no: u16::from_be_bytes([h[4] & WITHOUT_MSB, h[5]]),
 
             system_bytes: TransactionId(u32::from_be_bytes([h[6], h[7], h[8], h[9]])),
-        })
-    }
-}
-
-impl Secs1Block {
-    pub fn checksum(&self) -> u16 {
-        self.header
-            .to_bytes()
-            .iter()
-            .chain(self.data.iter())
-            .fold(0u16, |acc, b| acc.wrapping_add(*b as u16))
-    }
-
-    pub fn verify_checksum(&self, expected: u16) -> bool {
-        self.checksum() == expected
-    }
-
-    /// bytes 배열로 변환
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let header = self.header.to_bytes();
-
-        let mut buf = Vec::with_capacity(header.len() + self.data.len());
-
-        buf.extend_from_slice(&header);
-        buf.extend_from_slice(&self.data);
-
-        buf
-    }
-}
-
-impl TryFrom<&[u8]> for Secs1Block {
-    type Error = SecsTransportError;
-
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        if value.len() < 10 || value.len() > 254 {
-            return Err(SecsTransportError::InvalidBlock);
-        }
-
-        let raw_header: [u8; 10] = value[0..10]
-            .try_into()
-            .map_err(|_| SecsTransportError::InvalidBlock)?;
-
-        let header = Secs1BlockHeader::try_from(raw_header)?;
-
-        Ok(Self {
-            header,
-            data: value[10..].to_vec(),
         })
     }
 }

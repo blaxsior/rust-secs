@@ -1,6 +1,11 @@
+use secs_ii::error::Secs2Error;
 use thiserror::Error;
+use alloc::string::String;
 
-use crate::transport::{SecsTimeoutUnit, secs1::{block::Secs1BlockHeader, config::DeviceId}};
+use crate::transport::{
+    SecsTimeoutUnit,
+    secs1::{block::Secs1BlockHeader, config::DeviceId},
+};
 
 ///
 /// SecsTransport 처리 시 예외
@@ -35,3 +40,23 @@ pub enum SecsTransportError {
     InvalidState,
 }
 
+///
+/// secs 메시지 <-> block 변환 시 예외
+///
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum SecsMessageConvertError {
+    #[error("block no is not sequential: {0:?}")]
+    SequenceGap(u16),
+
+    #[error("e-bit is missing")]
+    MissingEbit,
+
+    #[error("no blocks to convert. blocks is empty")]
+    EmptyBlocks,
+
+    #[error("decoding error {0:?}")]
+    DecodeFailed(String),
+
+    #[error("encoding error {0:?}")]
+    EncodeFailed(Secs2Error)
+}
