@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use secs_ii::{SecsMessage, convert::secs2::serialize::Encode, item::Secs2Variant};
 
 use crate::transport::{
-    ConnectionMode, TransactionId, error::SecsMessageConvertError, secs1::{
+    ConnectionRole, SystemByte, error::SecsMessageConvertError, secs1::{
         block::{Secs1Block, Secs1BlockHeader},
         config::DeviceId,
     }
@@ -48,8 +48,8 @@ pub fn decode(mut blocks: Vec<Secs1Block>) -> Result<SecsMessage, SecsMessageCon
 
 pub fn encode(
     device_id: DeviceId,
-    transaction_id: TransactionId,
-    connection_mode: ConnectionMode,
+    transaction_id: SystemByte,
+    connection_mode: ConnectionRole,
     msg: SecsMessage,
 ) -> Result<Vec<Secs1Block>, SecsMessageConvertError> {
     let stream = msg.stream;
@@ -70,7 +70,7 @@ pub fn encode(
             // 헤더 구성
             let header = Secs1BlockHeader {
                 device_id: device_id,
-                rbit: connection_mode == ConnectionMode::Passive,
+                rbit: connection_mode == ConnectionRole::Passive,
                 stream: stream,
                 function: function,
                 wbit: need_reply,

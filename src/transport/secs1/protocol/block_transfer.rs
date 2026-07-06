@@ -1,6 +1,6 @@
 use crate::{
     transport::{
-        ConnectionMode, SecsTimeoutUnit,
+        ConnectionRole, SecsTimeoutUnit,
         error::SecsTransportError,
         secs1::{
             block::{Secs1Block, Secs1BlockHeader, Secs1HandshakeCode},
@@ -100,7 +100,7 @@ pub struct Secs1BlockTransferMachine {
     /// SECS-I block transfer current state
     state: Secs1BlockTransferState,
     /// SECS-I 통신 모드 (ACTIVE/ PASSIVE)
-    mode: ConnectionMode,
+    mode: ConnectionRole,
     // 현재 retry 횟수
     current_retry: u8,
     // 최대 retry 횟수
@@ -117,7 +117,7 @@ impl Secs1BlockTransferMachine {
             outgoing_timeout_queue: VecDeque::new(),
             timeout_manager: TimeoutManager::new(),
 
-            mode: config.mode,
+            mode: config.local_role,
 
             current_retry: 0,
             max_retry: config.t2_rty,
@@ -202,7 +202,7 @@ impl Secs1BlockTransferMachine {
                     // ENQ 송신 후 상대방의 응답을 기다리는 상태 -> handle_idle과 유사하게 ENQ, EOT 수신 시 처리
                     while let Some(byte) = self.incoming_buffer.pop_front() {
                         if let Ok(code) = Secs1HandshakeCode::try_from(byte) {
-                            if self.mode == ConnectionMode::Passive
+                            if self.mode == ConnectionRole::Passive
                                 && code == Secs1HandshakeCode::ENQ
                             {
                                 // 나는 passive인데 상대에게 ENQ 받음 -> 양보하고 RECEIVE 모드로 전이

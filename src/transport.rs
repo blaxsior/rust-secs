@@ -1,15 +1,25 @@
 pub mod error;
 pub mod secs1;
 
-// 현재 transaction ID 값
+/// 현재 transaction ID 값
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TransactionId(pub u32);
+pub struct SystemByte(pub u32);
 
-impl TransactionId {
+impl SystemByte {
     /// 다음 트랜잭션 id를 얻는다
     pub fn next(&self) -> Self {
         // id = 0인 케이스는 제외
-        TransactionId(self.0.wrapping_add(1).max(1))
+        SystemByte(self.0.wrapping_add(1).max(1))
+    }
+}
+
+/// 각 트랜잭션을 구분하는 식별 정보. source + transactionId
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TransactionId(bool, SystemByte);
+
+impl TransactionId {
+    pub fn next(&self) -> Self {
+        Self(self.0, self.1.next())
     }
 }
 
@@ -25,11 +35,21 @@ pub enum SecsTimeoutUnit {
     T4(TransactionId),
 }
 
+impl SecsTimeoutUnit {
+    pub fn to_transaction_id(&self) -> TransactionId {
+        match *self {
+            SecsTimeoutUnit::T3(id) => id,
+            SecsTimeoutUnit::T4(id) => id,
+            _ => panic!("unexpected condition {:?}", self),
+        }
+    }
+}
+
 ///
 /// SECS 통신 시 역할
 ///
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ConnectionMode {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ConnectionRole {
     /// 요청을 시도하는 측 (= master / host)
     Active, // = Master
     /// 요청에 응답하는 측 (= slave / eqp)

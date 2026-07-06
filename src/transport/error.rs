@@ -30,8 +30,11 @@ pub enum SecsTransportError {
     #[error("invalid block")]
     InvalidBlock,
 
+    #[error("message convert failed: {0:?}")]
+    MessageConvertFailed(SecsMessageConvertError),
+
     #[error("invalid block {0:?}")]
-    UnexpectedBlock(Secs1BlockHeader),
+    BlockError(Secs1BlockHeader),
 
     #[error("unknown device id: {0:?}")]
     UnknownDeviceId(DeviceId),

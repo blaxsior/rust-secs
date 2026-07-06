@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use secs_ii::{FunctionId, StreamId};
 
-use crate::transport::{TransactionId, error::SecsTransportError, secs1::config::DeviceId};
+use crate::transport::{SystemByte, error::SecsTransportError, secs1::config::DeviceId};
 
 const WITHOUT_MSB: u8 = 0x7F;
 const MSB_ONLY: u8 = 0x80;
@@ -65,7 +65,6 @@ impl TryFrom<&[u8]> for Secs1Block {
     }
 }
 
-
 ///
 /// SECS-I block header을 표현하는 구조체
 ///
@@ -86,7 +85,7 @@ pub struct Secs1BlockHeader {
     /// block 번호. 단일 block은 0 허용, 아니면 1부터 시작하여 1씩 증가
     pub block_no: u16,
     /// block transfer에 대한 트랜잭션을 식별하기 위한 byte 정보
-    pub system_bytes: TransactionId,
+    pub system_bytes: SystemByte,
 }
 
 impl Secs1BlockHeader {
@@ -122,6 +121,19 @@ impl Secs1BlockHeader {
         (self.function.0 % 2) != 0
     }
 
+    pub fn is_from_active(&self) -> bool {
+        self.rbit
+    }
+
+    pub fn is_from_passive(&self) -> bool {
+        !self.rbit
+    }
+
+    /// primary message인지 여부
+    pub fn is_secondary(&self) -> bool {
+        (self.function.0 % 2) == 0
+    }
+
     /// 첫번째 block인지 여부
     pub fn is_first_block(&self) -> bool {
         self.block_no == 1 || (self.block_no == 0 && self.ebit)
@@ -143,7 +155,7 @@ impl TryFrom<[u8; 10]> for Secs1BlockHeader {
             ebit: h[4] & MSB_ONLY != 0,
             block_no: u16::from_be_bytes([h[4] & WITHOUT_MSB, h[5]]),
 
-            system_bytes: TransactionId(u32::from_be_bytes([h[6], h[7], h[8], h[9]])),
+            system_bytes: SystemByte(u32::from_be_bytes([h[6], h[7], h[8], h[9]])),
         })
     }
 }
