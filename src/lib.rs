@@ -4,9 +4,13 @@ use crate::item::Secs2Variant;
 
 extern crate alloc;
 
-pub mod item;
 pub mod convert;
 pub mod error;
+pub mod item;
+
+/// SECS-II Device Id
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+pub struct DeviceId(pub u16);
 
 /// SECS-II Stream Id
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,11 +23,27 @@ pub struct FunctionId(pub u8);
 /// Secs Message 통신 시 사용하는 기본 메시지를 정의한다.
 pub struct SecsMessage {
     /// SECS-II stream
-    stream: StreamId,
+    pub stream: StreamId,
     /// SECS-II function
-    function: FunctionId,
+    pub function: FunctionId,
     /// 응답이 필요한지 여부
-    need_reply: bool,
+    pub need_reply: bool,
     /// 메시지 본문
-    body: Secs2Variant
+    pub body: Secs2Variant,
+}
+
+impl SecsMessage {
+    pub fn new(
+        stream: StreamId,
+        function: FunctionId,
+        need_reply: bool,
+        body: Secs2Variant,
+    ) -> Self {
+        Self {
+            stream,
+            function,
+            need_reply,
+            body,
+        }
+    }
 }
