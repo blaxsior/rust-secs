@@ -24,12 +24,9 @@ pub struct FunctionId(pub u8);
 pub struct SecsMessage {
     /// SECS-II stream
     pub stream: StreamId,
-    pub stream: StreamId,
     /// SECS-II function
     pub function: FunctionId,
-    pub function: FunctionId,
     /// 응답이 필요한지 여부
-    pub need_reply: bool,
     pub need_reply: bool,
     /// 메시지 본문
     pub body: Secs2Variant,
