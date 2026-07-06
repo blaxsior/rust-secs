@@ -1,10 +1,9 @@
 use alloc::vec::Vec;
-use secs_ii::{SecsMessage, convert::secs2::serialize::Encode, item::Secs2Variant};
+use secs_ii::{DeviceId, SecsMessage, convert::secs2::serialize::Encode, item::Secs2Variant};
 
 use crate::transport::{
     ConnectionRole, SystemByte, error::SecsMessageConvertError, secs1::{
-        block::{Secs1Block, Secs1BlockHeader},
-        config::DeviceId,
+        block::{Secs1Block, Secs1BlockHeader}
     }
 };
 

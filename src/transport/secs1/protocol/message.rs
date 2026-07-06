@@ -8,7 +8,7 @@ use crate::{
         error::SecsTransportError,
         secs1::{
             block::{Secs1Block, Secs1BlockHeader},
-            config::{DeviceId, Secs1TransportConfig},
+            config::{Secs1TransportConfig},
         },
     },
     util::time::{TimeoutManager, TimeoutTicket},
@@ -20,6 +20,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use sansio::Protocol;
 
+use secs_ii::DeviceId;
 use secs_ii::{FunctionId, SecsMessage};
 
 /// secs-i message protocol 수행 중 외부에서 주입하는 이벤트(블록 정상 송신 등)

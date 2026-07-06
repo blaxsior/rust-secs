@@ -1,8 +1,8 @@
 use alloc::vec::Vec;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use secs_ii::{FunctionId, StreamId};
+use secs_ii::{DeviceId, FunctionId, StreamId};
 
-use crate::transport::{SystemByte, error::SecsTransportError, secs1::config::DeviceId};
+use crate::transport::{SystemByte, error::SecsTransportError};
 
 const WITHOUT_MSB: u8 = 0x7F;
 const MSB_ONLY: u8 = 0x80;

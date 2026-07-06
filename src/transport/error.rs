@@ -1,10 +1,10 @@
-use secs_ii::error::Secs2Error;
+use secs_ii::{DeviceId, error::Secs2Error};
 use thiserror::Error;
 use alloc::string::String;
 
 use crate::transport::{
     SecsTimeoutUnit,
-    secs1::{block::Secs1BlockHeader, config::DeviceId},
+    secs1::{block::Secs1BlockHeader},
 };
 
 ///
