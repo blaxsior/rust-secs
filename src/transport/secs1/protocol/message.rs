@@ -203,12 +203,34 @@ impl Secs1MessageTransaction {
         Ok(())
     }
 
-    fn handle_send(&mut self) -> Option<Secs1Block> {
-        self.on_send_progress();
-        self.state.send_next()
+    fn handle_signal(&mut self, signal: Secs1MessageSignal) -> Option<Secs1Block> {
+        match signal {
+            Secs1MessageSignal::BlockSendSuccess { header } => {
+                self.on_send_progress(&header);
+                self.state.send_next()
+            }
+            Secs1MessageSignal::BlockSendFailed { .. } => {
+                // 전송 실패 알림
+                self.emit_effect(Secs1TransactionEffect::ErrorOccured(
+                    SecsTransportError::SendFailed(self.id),
+                ));
+                // 트랜잭션 종료
+                self.end_transaction();
+                None
+            }
+        }
     }
 
-    fn on_send_progress(&mut self) {
+    fn end_transaction(&mut self) {
+        self.state = Secs1TransactionState::End;
+        self.emit_effect(Secs1TransactionEffect::TransactionEnd);
+    }
+
+    fn wait_recv(&mut self) {
+        self.state = Secs1TransactionState::WaitRecv;
+    }
+
+    fn on_send_progress(&mut self, header: &Secs1BlockHeader) {
         if let Secs1TransactionState::Send { blocks } = &self.state {
             // 블록이 비어 있는 상태
             if blocks.is_empty() {
@@ -216,13 +238,16 @@ impl Secs1MessageTransaction {
                 match self.id.owner {
                     // 내가 primary message block을 다 보낸 상태
                     TransactionOwner::Local => {
-                        self.state = Secs1TransactionState::WaitRecv;
+                        if header.need_reply() {
+                            self.wait_recv();
+                        } else {
+                            self.end_transaction();
+                        }
                     }
                     // 상대가 보낸 primary message에 secondary로 응답한 상태
                     // 트랜잭션이 종료됨
                     TransactionOwner::Remote => {
-                        self.state = Secs1TransactionState::End;
-                        self.emit_effect(Secs1TransactionEffect::TransactionEnd);
+                        self.end_transaction();
                     }
                 }
             }
@@ -496,7 +521,6 @@ impl Secs1MessageMachine {
                 }
                 Secs1TransactionEffect::ErrorOccured(error) => {
                     self.emit_event(Secs1MessageEvent::ErrorOccured { error });
-                    self.remove_transaction(transaction_key);
                 }
                 Secs1TransactionEffect::RecvComplete(blocks) => match decode(blocks) {
                     Ok(msg) => {
@@ -563,34 +587,26 @@ impl Secs1MessageMachine {
     fn process_signal(&mut self) {
         // send 처리를 위함
         while let Some(signal) = self.incoming_signals.pop_front() {
-            match signal {
-                Secs1MessageSignal::BlockSendSuccess { header } => {
-                    let transaction_key = self.get_transaction_key(&header);
+            let header = match signal {
+                Secs1MessageSignal::BlockSendSuccess { header } => header,
+                Secs1MessageSignal::BlockSendFailed { header } => header,
+            };
 
-                    let (next_block, effects) = {
-                        if let Some(transaction) = self.find_transaction(&transaction_key) {
-                            let block = transaction.handle_send();
-                            let effects = transaction.poll_effects();
-                            (block, effects)
-                        } else {
-                            (None, Vec::new())
-                        }
-                    };
-
-                    if let Some(block) = next_block {
-                        self.outgoing_blocks.push_back(block);
-                    }
-
-                    self.handle_effects(effects, &transaction_key);
+            let transaction_key = self.get_transaction_key(&header);
+            let (next_block, effects) = {
+                if let Some(transaction) = self.find_transaction(&transaction_key) {
+                    let block = transaction.handle_signal(signal);
+                    let effects = transaction.poll_effects();
+                    (block, effects)
+                } else {
+                    (None, Vec::new())
                 }
-                Secs1MessageSignal::BlockSendFailed { header } => {
-                    let transaction_key = self.get_transaction_key(&header);
-                    self.remove_transaction(&transaction_key);
-                    self.emit_event(Secs1MessageEvent::ErrorOccured {
-                        error: SecsTransportError::SendFailed(transaction_key),
-                    });
-                }
+            };
+            if let Some(block) = next_block {
+                self.outgoing_blocks.push_back(block);
             }
+
+            self.handle_effects(effects, &transaction_key);
         }
     }
 
