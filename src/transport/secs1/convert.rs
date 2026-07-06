@@ -1,10 +1,8 @@
 use alloc::vec::Vec;
-use secs_ii::{DeviceId, SecsMessage, convert::secs2::serialize::Encode, item::Secs2Variant};
+use secs_ii::{SecsMessage, convert::secs2::serialize::Encode, item::Secs2Variant};
 
 use crate::transport::{
-    ConnectionRole, SystemByte, error::SecsMessageConvertError, secs1::{
-        block::{Secs1Block, Secs1BlockHeader}
-    }
+    DeviceId, SystemByte, error::SecsMessageConvertError, secs1::block::{MessageDirection, Secs1Block, Secs1BlockHeader}
 };
 
 pub fn decode(mut blocks: Vec<Secs1Block>) -> Result<SecsMessage, SecsMessageConvertError> {
@@ -47,8 +45,8 @@ pub fn decode(mut blocks: Vec<Secs1Block>) -> Result<SecsMessage, SecsMessageCon
 
 pub fn encode(
     device_id: DeviceId,
-    transaction_id: SystemByte,
-    connection_mode: ConnectionRole,
+    system_bytes: SystemByte,
+    direction: MessageDirection,
     msg: SecsMessage,
 ) -> Result<Vec<Secs1Block>, SecsMessageConvertError> {
     let stream = msg.stream;
@@ -69,13 +67,13 @@ pub fn encode(
             // 헤더 구성
             let header = Secs1BlockHeader {
                 device_id: device_id,
-                rbit: connection_mode == ConnectionRole::Passive,
+                rbit: direction.into(),
                 stream: stream,
                 function: function,
                 wbit: need_reply,
                 ebit: is_last,
                 block_no: (i + 1) as u16,
-                system_bytes: transaction_id,
+                system_bytes,
                 // 기타 헤더 필드 설정...
             };
 

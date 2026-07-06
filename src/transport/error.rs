@@ -1,10 +1,9 @@
-use secs_ii::{DeviceId, error::Secs2Error};
+use secs_ii::{error::Secs2Error};
 use thiserror::Error;
 use alloc::string::String;
 
 use crate::transport::{
-    SecsTimeoutUnit,
-    secs1::{block::Secs1BlockHeader},
+    DeviceId, SecsTimeoutUnit, TransactionKey, secs1::block::Secs1BlockHeader,
 };
 
 ///
@@ -16,7 +15,7 @@ pub enum SecsTransportError {
     ConnectionFailed(&'static str),
 
     #[error("failed to send message")]
-    SendFailed,
+    SendFailed(TransactionKey),
 
     #[error("failed to receive message")]
     RecvFailed,

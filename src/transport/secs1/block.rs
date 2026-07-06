@@ -1,8 +1,8 @@
 use alloc::vec::Vec;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
-use secs_ii::{DeviceId, FunctionId, StreamId};
+use secs_ii::{FunctionId, StreamId};
 
-use crate::transport::{SystemByte, error::SecsTransportError};
+use crate::transport::{DeviceId, SystemByte, error::SecsTransportError};
 
 const WITHOUT_MSB: u8 = 0x7F;
 const MSB_ONLY: u8 = 0x80;
@@ -65,13 +65,51 @@ impl TryFrom<&[u8]> for Secs1Block {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rbit(bool);
+impl Rbit {
+    pub const FORWARD: Self = Self(false);
+    pub const REVERSE: Self = Self(true);
+
+    /// 보수 값을 반환
+    pub const fn complement(self) -> Self {
+        Self(!self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageDirection {
+    /// Host -> Equipment (R = 0)
+    Forward,
+    /// Equipment -> Host (R = 1)
+    Reverse,
+}
+
+impl From<Rbit> for MessageDirection {
+    fn from(value: Rbit) -> Self {
+        if value.0 {
+            Self::Reverse
+        } else {
+            Self::Forward
+        }
+    }
+}
+
+impl From<MessageDirection> for Rbit {
+    fn from(value: MessageDirection) -> Self {
+        match value {
+            MessageDirection::Forward => Rbit(false),
+            MessageDirection::Reverse => Rbit(true),
+        }
+    }
+}
 ///
 /// SECS-I block header을 표현하는 구조체
 ///
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Secs1BlockHeader {
     /// reverse bit. eqp -> host인 경우 true
-    pub rbit: bool,
+    pub rbit: Rbit,
     /// 통신 대상 장치의 ID 값
     pub device_id: DeviceId,
 
@@ -92,7 +130,7 @@ impl Secs1BlockHeader {
     pub fn to_bytes(&self) -> [u8; 10] {
         let mut h = [0u8; 10];
 
-        h[0] = ((self.rbit as u8) << 7) | ((self.device_id.0 >> 8) as u8 & WITHOUT_MSB);
+        h[0] = ((self.rbit.0 as u8) << 7) | ((self.device_id.0 >> 8) as u8 & WITHOUT_MSB);
         h[1] = self.device_id.0 as u8;
 
         h[2] = ((self.wbit as u8) << 7) | (self.stream.0 & WITHOUT_MSB);
@@ -116,22 +154,18 @@ impl Secs1BlockHeader {
         self.wbit
     }
 
+    pub fn direction(&self) -> MessageDirection {
+        self.rbit.into()
+    }
+
     /// primary message인지 여부
     pub fn is_primary(&self) -> bool {
-        (self.function.0 % 2) != 0
-    }
-
-    pub fn is_from_active(&self) -> bool {
-        self.rbit
-    }
-
-    pub fn is_from_passive(&self) -> bool {
-        !self.rbit
+        self.function.is_primary()
     }
 
     /// primary message인지 여부
     pub fn is_secondary(&self) -> bool {
-        (self.function.0 % 2) == 0
+        self.function.is_secondary()
     }
 
     /// 첫번째 block인지 여부
@@ -145,7 +179,7 @@ impl TryFrom<[u8; 10]> for Secs1BlockHeader {
 
     fn try_from(h: [u8; 10]) -> Result<Self, Self::Error> {
         Ok(Self {
-            rbit: h[0] & MSB_ONLY != 0,
+            rbit: Rbit(h[0] & MSB_ONLY != 0),
             device_id: DeviceId(u16::from_be_bytes([h[0] & WITHOUT_MSB, h[1]])),
 
             wbit: h[2] & MSB_ONLY != 0,

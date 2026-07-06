@@ -13,13 +13,35 @@ impl SystemByte {
     }
 }
 
-/// 각 트랜잭션을 구분하는 식별 정보. source + transactionId
+/// 트랜잭션을 시작한 쪽(Primary Message Sender 측)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TransactionId(bool, SystemByte);
+pub enum TransactionOwner {
+    /// 현재 장치
+    Local,
+    /// 상대측
+    Remote,
+}
 
-impl TransactionId {
+/// 각 트랜잭션을 구분하는 식별 정보. 트랜잭션 주도측 + system byte(source_id[16] / transaction_id[16])
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TransactionKey {
+    pub owner: TransactionOwner,
+    pub system_bytes: SystemByte
+}
+
+impl TransactionKey {
     pub fn next(&self) -> Self {
-        Self(self.0, self.1.next())
+        Self {
+            owner: self.owner,
+            system_bytes: self.system_bytes.next()
+        }
+    }
+
+    pub fn new(owner: TransactionOwner, system_bytes: SystemByte) -> Self {
+        Self {
+            owner,
+            system_bytes
+        }
     }
 }
 
@@ -30,16 +52,16 @@ pub enum SecsTimeoutUnit {
     /// protocol timeout: 제어문자 보낸 후 응답 제어문자 도착
     T2,
     /// reply timeout: Primary Message 송신 ~ Secondary Message 수신
-    T3(TransactionId),
+    T3(TransactionKey),
     /// inter block timeout: 멀티 블록 전송 시 block 수신 간 간격
-    T4(TransactionId),
+    T4(TransactionKey),
 }
 
 impl SecsTimeoutUnit {
-    pub fn to_transaction_id(&self) -> TransactionId {
+    pub fn to_transaction_key(&self) -> TransactionKey {
         match *self {
-            SecsTimeoutUnit::T3(id) => id,
-            SecsTimeoutUnit::T4(id) => id,
+            SecsTimeoutUnit::T3(key) => key,
+            SecsTimeoutUnit::T4(key) => key,
             _ => panic!("unexpected condition {:?}", self),
         }
     }
@@ -55,3 +77,7 @@ pub enum ConnectionRole {
     /// 요청에 응답하는 측 (= slave / eqp)
     Passive,
 }
+
+/// SECS 통신 시 사용되는 Device Id
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeviceId(pub u16);

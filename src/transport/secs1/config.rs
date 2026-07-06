@@ -1,8 +1,6 @@
 use core::time::Duration;
 
-use secs_ii::DeviceId;
-
-use crate::transport::ConnectionRole;
+use crate::transport::{ConnectionRole, DeviceId};
 
 
 
@@ -22,5 +20,5 @@ pub struct Secs1TransportConfig {
     pub t2_timeout: Duration,
     pub t3_timeout: Duration,
     pub t4_timeout: Duration,
-    pub t2_rty: u8,
+    pub t2_rty_limit: u8,
 }

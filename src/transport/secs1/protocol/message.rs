@@ -1,14 +1,17 @@
 use core::mem;
 use core::panic;
 
+use crate::transport::DeviceId;
+use crate::transport::TransactionOwner;
+use crate::transport::secs1::block::MessageDirection;
 use crate::transport::secs1::convert::decode;
 use crate::{
     transport::{
-        ConnectionRole, SecsTimeoutUnit, SystemByte, TransactionId,
+        ConnectionRole, SecsTimeoutUnit, SystemByte, TransactionKey,
         error::SecsTransportError,
         secs1::{
             block::{Secs1Block, Secs1BlockHeader},
-            config::{Secs1TransportConfig},
+            config::Secs1TransportConfig,
         },
     },
     util::time::{TimeoutManager, TimeoutTicket},
@@ -20,7 +23,6 @@ use alloc::vec;
 use alloc::vec::Vec;
 use sansio::Protocol;
 
-use secs_ii::DeviceId;
 use secs_ii::{FunctionId, SecsMessage};
 
 /// secs-i message protocol 수행 중 외부에서 주입하는 이벤트(블록 정상 송신 등)
@@ -34,13 +36,13 @@ pub enum Secs1MessageSignal {
 /// secs-i message protocol 수행 중 발생하는 이벤트
 pub enum Secs1MessageEvent {
     /// 메시지를 성공적으로 송신
-    MessageSent { transaction_id: TransactionId },
+    MessageSent { transaction_key: TransactionKey },
     /// 메시지를 성공적으로 수신
-    MessageReceived { transaction_id: TransactionId },
+    MessageReceived { transaction_key: TransactionKey },
 
     /// 메시지 송수신 중 타임아웃 발생
     MessageTimeout {
-        transaction_id: TransactionId,
+        transaction_key: TransactionKey,
         timeout_unit: SecsTimeoutUnit,
     },
     /// 비정상적인 상태 전이 등 에러가 발생한 경우
@@ -58,7 +60,7 @@ pub enum Secs1TransactionState {
     WaitRecv,
 
     /// Primary 수신 후 Secondary Message 전송 대기 중
-    WaitSend(TransactionId),
+    WaitSend(TransactionKey),
 
     /// Message 수신 중인 상태 (T4: inter block timer)
     Recv {
@@ -114,12 +116,14 @@ pub enum Secs1TransactionEffect {
     RecvComplete(Vec<Secs1Block>),
     /// 메시지 송신 성공
     SendComplete,
+    /// 트랜잭션 종료
+    TransactionEnd,
 }
 
 /// 트랜잭션을 표현하는 객체
 pub struct Secs1MessageTransaction {
     /// 트랜잭션을 구분하는 ID 값
-    id: TransactionId,
+    id: TransactionKey,
     /// 트랜잭션 진행 상태
     state: Secs1TransactionState,
     last_header: Option<Secs1BlockHeader>,
@@ -128,7 +132,7 @@ pub struct Secs1MessageTransaction {
 }
 
 impl Secs1MessageTransaction {
-    pub fn new(id: TransactionId, state: Secs1TransactionState) -> Self {
+    pub fn new(id: TransactionKey, state: Secs1TransactionState) -> Self {
         Self {
             id,
             state,
@@ -199,8 +203,30 @@ impl Secs1MessageTransaction {
         Ok(())
     }
 
-    pub fn poll_send(&mut self) -> Option<Secs1Block> {
+    fn handle_send(&mut self) -> Option<Secs1Block> {
+        self.on_send_progress();
         self.state.send_next()
+    }
+
+    fn on_send_progress(&mut self) {
+        if let Secs1TransactionState::Send { blocks } = &self.state {
+            // 블록이 비어 있는 상태
+            if blocks.is_empty() {
+                self.emit_effect(Secs1TransactionEffect::SendComplete);
+                match self.id.owner {
+                    // 내가 primary message block을 다 보낸 상태
+                    TransactionOwner::Local => {
+                        self.state = Secs1TransactionState::WaitRecv;
+                    }
+                    // 상대가 보낸 primary message에 secondary로 응답한 상태
+                    // 트랜잭션이 종료됨
+                    TransactionOwner::Remote => {
+                        self.state = Secs1TransactionState::End;
+                        self.emit_effect(Secs1TransactionEffect::TransactionEnd);
+                    }
+                }
+            }
+        }
     }
 
     fn emit_effect(&mut self, effect: Secs1TransactionEffect) {
@@ -210,6 +236,10 @@ impl Secs1MessageTransaction {
     /// 외부로 메시지를 전달
     pub fn poll_effect(&mut self) -> Option<Secs1TransactionEffect> {
         return self.effects.pop_front();
+    }
+
+    pub fn poll_effects(&mut self) -> Vec<Secs1TransactionEffect> {
+        Vec::from(mem::take(&mut self.effects))
     }
 
     /// 기대한 블록이 맞는지 체크
@@ -286,7 +316,7 @@ impl Secs1MessageTransaction {
         // rbit 반전 + function + 1
         // secondary 설정
         self.expected_header = Some(Secs1BlockHeader {
-            rbit: !header.rbit,
+            rbit: header.rbit.complement(),
             function: FunctionId(header.function.0 + 1),
             ..*header
         });
@@ -341,7 +371,7 @@ pub struct Secs1MessageMachine {
 
     /// 다음에 사용할 트랜잭션 ID (source 주도 기준)
     next_system_byte: SystemByte,
-    transaction_map: BTreeMap<TransactionId, Secs1MessageTransaction>,
+    transaction_map: BTreeMap<TransactionKey, Secs1MessageTransaction>,
 }
 
 pub enum Secs1MessageDirection {
@@ -386,22 +416,26 @@ impl Secs1MessageMachine {
         self.timeout_manager.cancel(timeout);
     }
 
-    /// transaction_id를 만든다
-    // fn generate_transaction_id(&mut self) -> TransactionId {
+    /// transaction_key를 만든다
+    // fn generate_transaction_key(&mut self) -> TransactionId {
     //     let current = self.next_system_byte;
     //     self.next_system_byte = current.next();
     //     return TransactionId(true, current);
     // }
 
-    /// header로부터 transaction_id를 획득
-    fn get_transaction_id(&self, header: &Secs1BlockHeader) -> TransactionId {
-        let sender_is_self = match self.role {
-            ConnectionRole::Active => header.is_from_active(),
-            ConnectionRole::Passive => header.is_from_passive(),
+    /// header로부터 transaction_key를 획득
+    fn get_transaction_key(&self, header: &Secs1BlockHeader) -> TransactionKey {
+        let direction = header.direction();
+        let role = self.role;
+
+        let transaction_owner = match (role, direction) {
+            (ConnectionRole::Active, MessageDirection::Forward) => TransactionOwner::Local,
+            (ConnectionRole::Active, MessageDirection::Reverse) => TransactionOwner::Remote,
+            (ConnectionRole::Passive, MessageDirection::Forward) => TransactionOwner::Remote,
+            (ConnectionRole::Passive, MessageDirection::Reverse) => TransactionOwner::Local,
         };
 
-
-        TransactionId(sender_is_self, header.system_bytes)
+        TransactionKey::new(transaction_owner, header.system_bytes)
     }
 
     pub fn run(&mut self) {
@@ -416,49 +450,41 @@ impl Secs1MessageMachine {
     fn process_receive(&mut self) {
         while let Some(block) = self.incoming_blocks.pop_front() {
             // Routing ERROR: 내가 다루는 deviceId가 아님 -> 에러 알리고 무시
-            let transaction_id =
-                self.get_transaction_id(&block.header);
+            let transaction_key = self.get_transaction_key(&block.header);
 
             if !self.is_known_device(&block.header.device_id) {
                 self.handle_unknown_device(block);
                 continue;
             }
 
-            let mut effects = Vec::new();
-            {
-                // 기존 트랜잭션이 있나? 없으면 생성 후 대응
-                let transaction = self
-                    .transaction_map
-                    .entry(transaction_id)
-                    .or_insert_with(|| {
-                        Secs1MessageTransaction::new(
-                            transaction_id,
-                            Secs1TransactionState::Recv { blocks: Vec::new() },
-                        )
-                    });
+            // 기존 트랜잭션이 있나? 없으면 생성 후 대응
+            let transaction = self
+                .transaction_map
+                .entry(transaction_key)
+                .or_insert_with(|| {
+                    Secs1MessageTransaction::new(
+                        transaction_key,
+                        Secs1TransactionState::Recv { blocks: Vec::new() },
+                    )
+                });
 
-                let result = transaction.handle_receive(block);
-
-                match result {
-                    Ok(_) => {
-                        while let Some(effect) = transaction.poll_effect() {
-                            effects.push(effect);
-                        }
-                    }
-                    Err(error) => {
-                        self.remove_transaction(&transaction_id);
-                        self.emit_event(Secs1MessageEvent::ErrorOccured { error });
-                    }
+            match transaction.handle_receive(block) {
+                Ok(_) => {
+                    let effects = transaction.poll_effects();
+                    self.handle_effects(effects, &transaction_key);
+                }
+                Err(error) => {
+                    self.remove_transaction(&transaction_key);
+                    self.emit_event(Secs1MessageEvent::ErrorOccured { error });
                 }
             }
-            self.handle_effects(effects, &transaction_id);
         }
     }
 
     fn handle_effects(
         &mut self,
         effects: Vec<Secs1TransactionEffect>,
-        transaction_id: &TransactionId,
+        transaction_key: &TransactionKey,
     ) {
         for effect in effects {
             match effect {
@@ -470,17 +496,13 @@ impl Secs1MessageMachine {
                 }
                 Secs1TransactionEffect::ErrorOccured(error) => {
                     self.emit_event(Secs1MessageEvent::ErrorOccured { error });
-                    self.remove_transaction(transaction_id);
+                    self.remove_transaction(transaction_key);
                 }
                 Secs1TransactionEffect::RecvComplete(blocks) => match decode(blocks) {
                     Ok(msg) => {
-                        // 아직 메시지 reply가 필요한 경우
-                        if !msg.need_reply {
-                            self.remove_transaction(transaction_id);
-                        }
                         self.outgoing_msgs.push_back(msg);
                         self.emit_event(Secs1MessageEvent::MessageReceived {
-                            transaction_id: *transaction_id,
+                            transaction_key: *transaction_key,
                         });
                     }
                     Err(error) => {
@@ -490,10 +512,12 @@ impl Secs1MessageMachine {
                     }
                 },
                 Secs1TransactionEffect::SendComplete => {
-                    self.remove_transaction(transaction_id);
                     self.emit_event(Secs1MessageEvent::MessageSent {
-                        transaction_id: *transaction_id,
+                        transaction_key: *transaction_key,
                     });
+                }
+                Secs1TransactionEffect::TransactionEnd => {
+                    self.remove_transaction(transaction_key);
                 }
             }
         }
@@ -506,10 +530,9 @@ impl Secs1MessageMachine {
             error: SecsTransportError::UnknownDeviceId(block.header.device_id),
         });
 
-        let transaction_id =
-            self.get_transaction_id(&block.header);
+        let transaction_key = self.get_transaction_key(&block.header);
         // 트랜잭션으로 등록되어 있었던 경우라면 트랜잭션도 취소 처리
-        self.remove_transaction(&transaction_id);
+        self.remove_transaction(&transaction_key);
     }
 
     fn process_timeout(&mut self) {
@@ -521,13 +544,13 @@ impl Secs1MessageMachine {
                 continue;
             }
             let timeout = ticket.timeout;
-            let transaction_id = timeout.to_transaction_id();
+            let transaction_key = timeout.to_transaction_key();
 
             // 타임아웃 발생 -> 해당 transaction abort = 제거 처리 후 이벤트 발생
-            if self.find_transaction(&transaction_id).is_some() {
-                self.remove_transaction(&transaction_id);
+            if self.find_transaction(&transaction_key).is_some() {
+                self.remove_transaction(&transaction_key);
                 self.emit_event(Secs1MessageEvent::MessageTimeout {
-                    transaction_id,
+                    transaction_key,
                     timeout_unit: ticket.timeout,
                 });
             };
@@ -537,16 +560,48 @@ impl Secs1MessageMachine {
     }
 
     // 외부 signal에 대해 아이템을 처리한다.
-    fn process_signal(&mut self) {}
+    fn process_signal(&mut self) {
+        // send 처리를 위함
+        while let Some(signal) = self.incoming_signals.pop_front() {
+            match signal {
+                Secs1MessageSignal::BlockSendSuccess { header } => {
+                    let transaction_key = self.get_transaction_key(&header);
+
+                    let (next_block, effects) = {
+                        if let Some(transaction) = self.find_transaction(&transaction_key) {
+                            let block = transaction.handle_send();
+                            let effects = transaction.poll_effects();
+                            (block, effects)
+                        } else {
+                            (None, Vec::new())
+                        }
+                    };
+
+                    if let Some(block) = next_block {
+                        self.outgoing_blocks.push_back(block);
+                    }
+
+                    self.handle_effects(effects, &transaction_key);
+                }
+                Secs1MessageSignal::BlockSendFailed { header } => {
+                    let transaction_key = self.get_transaction_key(&header);
+                    self.remove_transaction(&transaction_key);
+                    self.emit_event(Secs1MessageEvent::ErrorOccured {
+                        error: SecsTransportError::SendFailed(transaction_key),
+                    });
+                }
+            }
+        }
+    }
 
     /// 대상 트랜잭션을 찾아 반환한다.
-    fn find_transaction(&mut self, id: &TransactionId) -> Option<&mut Secs1MessageTransaction> {
-        return self.transaction_map.get_mut(id);
+    fn find_transaction(&mut self, key: &TransactionKey) -> Option<&mut Secs1MessageTransaction> {
+        return self.transaction_map.get_mut(key);
     }
 
     /// 대상 트랜잭션을 제거한다.
-    fn remove_transaction(&mut self, id: &TransactionId) {
-        self.transaction_map.remove(id);
+    fn remove_transaction(&mut self, key: &TransactionKey) {
+        self.transaction_map.remove(key);
     }
 
     /// device id가 알려진 장치인지 체크

@@ -120,7 +120,7 @@ impl Secs1BlockTransferMachine {
             mode: config.local_role,
 
             current_retry: 0,
-            max_retry: config.t2_rty,
+            max_retry: config.t2_rty_limit,
             incoming_blocks: VecDeque::new(),
             outgoing_blocks: VecDeque::new(),
             event_queue: VecDeque::new(),
