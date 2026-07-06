@@ -8,10 +8,6 @@ pub mod convert;
 pub mod error;
 pub mod item;
 
-/// SECS-II Device Id
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
-pub struct DeviceId(pub u16);
-
 /// SECS-II Stream Id
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StreamId(pub u8);
@@ -19,6 +15,15 @@ pub struct StreamId(pub u8);
 /// SECS-II Function Id
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FunctionId(pub u8);
+impl FunctionId {
+    pub fn is_primary(&self) -> bool {
+        self.0 & 1 == 1
+    }
+
+    pub fn is_secondary(&self) -> bool {
+        self.0 & 1 == 0
+    }
+}
 
 /// Secs Message 통신 시 사용하는 기본 메시지를 정의한다.
 pub struct SecsMessage {
