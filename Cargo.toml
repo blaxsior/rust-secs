@@ -9,3 +9,4 @@ secs-ii = { path = "secs-ii" }
 secs-transport = { path = "secs-transport" }
 
 thiserror = "2.0.18"
+log = "0.4.33"
