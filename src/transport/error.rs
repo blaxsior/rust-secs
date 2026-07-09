@@ -1,4 +1,4 @@
-use secs_ii::{error::Secs2Error};
+use secs_ii::{FunctionId, StreamId, error::Secs2Error};
 use thiserror::Error;
 use alloc::string::String;
 
@@ -40,6 +40,12 @@ pub enum SecsTransportError {
 
     #[error("invalid status")]
     InvalidState,
+
+    #[error("no match SxFy {0:?} {1:?}")]
+    NoMatchReplyTransaction(StreamId, FunctionId),
+
+    #[error("no such transaction {0:?}")]
+    NoSuchTransaction(TransactionKey),
 }
 
 ///

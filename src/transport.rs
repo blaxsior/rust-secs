@@ -26,21 +26,21 @@ pub enum TransactionOwner {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TransactionKey {
     pub owner: TransactionOwner,
-    pub system_bytes: SystemByte
+    pub system_byte: SystemByte,
 }
 
 impl TransactionKey {
     pub fn next(&self) -> Self {
         Self {
             owner: self.owner,
-            system_bytes: self.system_bytes.next()
+            system_byte: self.system_byte.next(),
         }
     }
 
     pub fn new(owner: TransactionOwner, system_bytes: SystemByte) -> Self {
         Self {
             owner,
-            system_bytes
+            system_byte: system_bytes,
         }
     }
 }
@@ -81,3 +81,48 @@ pub enum ConnectionRole {
 /// SECS 통신 시 사용되는 Device Id
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DeviceId(pub u16);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Rbit(bool);
+impl Rbit {
+    /// 보수 값을 반환
+    pub const fn complement(self) -> Self {
+        Self(!self.0)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageDirection {
+    /// Host -> Equipment (R = 0)
+    Forward,
+    /// Equipment -> Host (R = 1)
+    Reverse,
+}
+
+impl MessageDirection {
+    pub fn opposite(self) -> Self {
+        match self {
+            Self::Forward => Self::Reverse,
+            Self::Reverse => Self::Forward,
+        }
+    }
+}
+
+impl From<Rbit> for MessageDirection {
+    fn from(value: Rbit) -> Self {
+        if value.0 {
+            Self::Forward
+        } else {
+            Self::Reverse
+        }
+    }
+}
+
+impl From<MessageDirection> for Rbit {
+    fn from(value: MessageDirection) -> Self {
+        match value {
+            MessageDirection::Forward => Rbit(false),
+            MessageDirection::Reverse => Rbit(true),
+        }
+    }
+}

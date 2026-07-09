@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use secs_ii::{FunctionId, StreamId};
 
-use crate::transport::{DeviceId, SystemByte, error::SecsTransportError};
+use crate::transport::{DeviceId, MessageDirection, Rbit, SystemByte, error::SecsTransportError};
 
 const WITHOUT_MSB: u8 = 0x7F;
 const MSB_ONLY: u8 = 0x80;
@@ -65,44 +65,6 @@ impl TryFrom<&[u8]> for Secs1Block {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Rbit(bool);
-impl Rbit {
-    pub const FORWARD: Self = Self(false);
-    pub const REVERSE: Self = Self(true);
-
-    /// 보수 값을 반환
-    pub const fn complement(self) -> Self {
-        Self(!self.0)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MessageDirection {
-    /// Host -> Equipment (R = 0)
-    Forward,
-    /// Equipment -> Host (R = 1)
-    Reverse,
-}
-
-impl From<Rbit> for MessageDirection {
-    fn from(value: Rbit) -> Self {
-        if value.0 {
-            Self::Reverse
-        } else {
-            Self::Forward
-        }
-    }
-}
-
-impl From<MessageDirection> for Rbit {
-    fn from(value: MessageDirection) -> Self {
-        match value {
-            MessageDirection::Forward => Rbit(false),
-            MessageDirection::Reverse => Rbit(true),
-        }
-    }
-}
 ///
 /// SECS-I block header을 표현하는 구조체
 ///

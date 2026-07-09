@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use secs_ii::{SecsMessage, convert::secs2::serialize::Encode, item::Secs2Variant};
 
 use crate::transport::{
-    DeviceId, SystemByte, error::SecsMessageConvertError, secs1::block::{MessageDirection, Secs1Block, Secs1BlockHeader}
+    DeviceId, MessageDirection, SystemByte, error::SecsMessageConvertError, secs1::block::{Secs1Block, Secs1BlockHeader}
 };
 
 pub fn decode(mut blocks: Vec<Secs1Block>) -> Result<SecsMessage, SecsMessageConvertError> {
