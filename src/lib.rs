@@ -9,11 +9,11 @@ pub mod error;
 pub mod item;
 
 /// SECS-II Stream Id
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct StreamId(pub u8);
 
 /// SECS-II Function Id
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FunctionId(pub u8);
 impl FunctionId {
     pub fn is_primary(&self) -> bool {
@@ -22,6 +22,10 @@ impl FunctionId {
 
     pub fn is_secondary(&self) -> bool {
         self.0 & 1 == 0
+    }
+
+    pub fn reply(&self) -> Self {
+        FunctionId(self.0 + 1)
     }
 }
 
