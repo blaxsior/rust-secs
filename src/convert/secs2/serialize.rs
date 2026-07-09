@@ -146,7 +146,7 @@ mod tests {
             ];
 
             let variant = Secs2Variant::list(vec![
-                Secs2Variant::binary(vec![11u8, 12u8]),
+                Secs2Variant::binary_list(vec![11u8, 12u8]),
                 Secs2Variant::ascii(String::from("hello")),
             ]);
 
