@@ -1,15 +1,15 @@
 use crate::transport::error::SecsTransportError;
-use crate::transport::secs1::protocol::message::transaction;
-use crate::transport::{SecsTimeoutUnit, TransactionKey, TransactionOwner};
 use crate::transport::secs1::block::Secs1Block;
 use crate::transport::secs1::{block::Secs1BlockHeader, protocol::message::Secs1MessageSignal};
+use crate::transport::{SecsTimeoutUnit, TransactionKey, TransactionOwner};
 
-use core::mem;
 use alloc::collections::VecDeque;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::mem;
+use log;
 use secs_ii::{FunctionId, StreamId};
-
+#[derive(Debug)]
 pub enum Secs1TransactionState {
     /// 메시지를 전송 중인 상태
     Send {
@@ -51,16 +51,18 @@ impl Secs1TransactionState {
         // Send 상태 -> 마지막 블록 전송
         if let Secs1TransactionState::Send { blocks } = self {
             return blocks.pop_front();
+        } else {
+            log::warn!("cannot send next block. current state: {:?}", self);
+            None
         }
-
-        // Send 상태가 아니거나, 보낼 블록이 더 이상 없는 경우
-        None
     }
 
     /// recv 모드에서 아이템을 추가한다.
     pub fn recv_next(&mut self, block: Secs1Block) {
         if let Secs1TransactionState::Recv { blocks } = self {
             blocks.push(block);
+        } else {
+            log::warn!("cannot recv next block. current state: {:?}", self);
         }
     }
 }
@@ -156,7 +158,11 @@ impl Secs1MessageTransaction {
                 if header.is_primary() && header.need_reply() {
                     // 전송 대기 상태로 전이 (handle_send 시 transaction 매칭 로직 필요)
                     self.state = Secs1TransactionState::WaitSend(self.id);
-                    self.emit_effect(Secs1TransactionEffect::ReplyRequired(header.stream, header.function.reply(), self.id));
+                    self.emit_effect(Secs1TransactionEffect::ReplyRequired(
+                        header.stream,
+                        header.function.reply(),
+                        self.id,
+                    ));
                 }
 
                 self.emit_effect(Secs1TransactionEffect::RecvComplete(blocks));
@@ -196,11 +202,17 @@ impl Secs1MessageTransaction {
     }
 
     pub fn handle_reply(&mut self, key: &TransactionKey, blocks: Vec<Secs1Block>) {
-
         if let Secs1TransactionState::WaitSend(stored_key) = self.state {
             // 내부 저장한 키와 비교해서 트랜잭션 키가 다르면 전송 실패로 처리, 트랜잭션 종료
             if stored_key != *key {
-                self.emit_effect(Secs1TransactionEffect::ErrorOccured(SecsTransportError::SendFailed(*key)));
+                log::error!(
+                    "transaction key different. expected {:?} found {:?}",
+                    stored_key,
+                    key
+                );
+                self.emit_effect(Secs1TransactionEffect::ErrorOccured(
+                    SecsTransportError::SendFailed(*key),
+                ));
                 // self.end_transaction();
                 // timeout에 의한 트랜잭션 종료로 처리하기 위해 대기
                 return;
@@ -211,29 +223,36 @@ impl Secs1MessageTransaction {
     }
 
     pub fn switch_to_send(&mut self, blocks: Vec<Secs1Block>) {
-        self.state = Secs1TransactionState::Send { blocks: VecDeque::from(blocks) };
+        self.state = Secs1TransactionState::Send {
+            blocks: VecDeque::from(blocks),
+        };
+        log::debug!("switch state to send");
     }
 
     fn end_transaction(&mut self) {
         self.state = Secs1TransactionState::End;
         self.emit_effect(Secs1TransactionEffect::TransactionEnd);
+        log::debug!("transaction end");
     }
 
-    fn wait_recv(&mut self, header: &Secs1BlockHeader) {
+    fn switch_to_wait_recv(&mut self, header: &Secs1BlockHeader) {
         self.state = Secs1TransactionState::WaitRecv;
         self.set_reply_timer(header);
+        log::debug!("switch to wait recv");
     }
 
     fn on_send_progress(&mut self, header: &Secs1BlockHeader) {
         if let Secs1TransactionState::Send { blocks } = &self.state {
             // 블록이 비어 있는 상태
             if blocks.is_empty() {
+                log::debug!("message send success. owner = {:?}", self.id.owner);
                 self.emit_effect(Secs1TransactionEffect::SendComplete);
+
                 match self.id.owner {
                     // 내가 primary message block을 다 보낸 상태
                     TransactionOwner::Local => {
                         if header.need_reply() {
-                            self.wait_recv(&header);
+                            self.switch_to_wait_recv(&header);
                         } else {
                             self.end_transaction();
                         }
@@ -359,4 +378,33 @@ impl Secs1MessageTransaction {
     pub fn get_last_header(&self) -> Option<Secs1BlockHeader> {
         self.last_header
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use secs_ii::{FunctionId, SecsMessage, StreamId, item::Secs2Variant};
+
+    /// primary + need recv 데이터를 요청받은 경우
+    #[test]
+    fn test_recv_primary_need_reply() {
+        let msg = SecsMessage::new(
+            StreamId(1), 
+            FunctionId(3), 
+            true,
+            Secs2Variant::list(vec![
+                Secs2Variant::uint4_list(vec![1001]),
+                Secs2Variant::uint4_list(vec![1002]),
+                Secs2Variant::uint4_list(vec![1003]),
+                Secs2Variant::uint4_list(vec![1004]),
+                Secs2Variant::uint4_list(vec![1005]),
+                Secs2Variant::uint4_list(vec![1006]),
+                Secs2Variant::uint4_list(vec![1007]),
+                Secs2Variant::uint4_list(vec![1008]),
+                Secs2Variant::uint4_list(vec![1009])
+            ])
+        );
+    }
+
+    #[test]
+    fn test_send() {}
 }

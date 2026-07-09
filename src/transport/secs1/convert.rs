@@ -2,7 +2,9 @@ use alloc::vec::Vec;
 use secs_ii::{SecsMessage, convert::secs2::serialize::Encode, item::Secs2Variant};
 
 use crate::transport::{
-    DeviceId, MessageDirection, SystemByte, error::SecsMessageConvertError, secs1::block::{Secs1Block, Secs1BlockHeader}
+    DeviceId, MessageDirection, SystemByte,
+    error::SecsMessageConvertError,
+    secs1::block::{Secs1Block, Secs1BlockHeader},
 };
 
 pub fn decode(mut blocks: Vec<Secs1Block>) -> Result<SecsMessage, SecsMessageConvertError> {
@@ -85,4 +87,61 @@ pub fn encode(
         .collect::<Vec<Secs1Block>>();
 
     Ok(blocks)
+}
+
+#[cfg(test)]
+mod tests {
+    use secs_ii::{FunctionId, SecsMessage, StreamId, item::Secs2Variant};
+
+    use crate::transport::{DeviceId, MessageDirection, Rbit, SystemByte, secs1::convert::encode};
+
+    /// primary + need recv 데이터를 요청받은 경우
+    #[test]
+    fn test_recv_primary_need_reply() {
+        let device_id = DeviceId(1016);
+        let system_bytes = SystemByte(3030);
+        let msg = SecsMessage::new(
+            StreamId(1),
+            FunctionId(3),
+            true,
+            Secs2Variant::list(vec![
+                Secs2Variant::uint4(1001),
+                Secs2Variant::uint4(1002),
+                Secs2Variant::uint4(1003),
+                Secs2Variant::uint4(1004),
+                Secs2Variant::uint4(1005),
+                Secs2Variant::uint4(1006),
+                Secs2Variant::uint4(1007),
+                Secs2Variant::uint4(1008),
+                Secs2Variant::uint4(1009),
+                Secs2Variant::uint4(1010),
+            ]),
+        );
+        // host -> eqp 가정
+        let direction = MessageDirection::Forward;
+
+        let expected_data = vec![
+            0x01, 0x0A, 0xB1, 0x04, 0x00, 0x00, 0x03, 0xE9, 0xB1, 0x04, 0x00, 0x00, 0x03, 0xEA,
+            0xB1, 0x04, 0x00, 0x00, 0x03, 0xEB, 0xB1, 0x04, 0x00, 0x00, 0x03, 0xEC, 0xB1, 0x04,
+            0x00, 0x00, 0x03, 0xED, 0xB1, 0x04, 0x00, 0x00, 0x03, 0xEE, 0xB1, 0x04, 0x00, 0x00,
+            0x03, 0xEF, 0xB1, 0x04, 0x00, 0x00, 0x03, 0xF0, 0xB1, 0x04, 0x00, 0x00, 0x03, 0xF1,
+            0xB1, 0x04, 0x00, 0x00, 0x03, 0xF2,
+        ];
+
+        let blocks =
+            encode(device_id, system_bytes, direction, msg).expect("message encode failed");
+
+        assert_eq!(blocks.len(), 1);
+        let block = blocks.get(0).unwrap();
+        let header = &block.header;
+
+        assert_eq!(header.block_no, 1);
+        assert_eq!(header.stream, StreamId(1));
+        assert_eq!(header.function, FunctionId(3));
+        assert_eq!(header.rbit, Rbit(false));
+        assert_eq!(block.data, expected_data);
+    }
+
+    // #[test]
+    // fn test_send() {}
 }
