@@ -15,9 +15,10 @@ pub mod uint2;
 pub mod uint4;
 pub mod uint8;
 
-use num_enum::{IntoPrimitive, TryFromPrimitive};
-use alloc::vec::Vec;
 use alloc::string::String;
+use alloc::vec::Vec;
+use alloc::vec;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use crate::{
     convert::secs2::serialize::Encode,
@@ -112,47 +113,108 @@ impl Secs2Variant {
     }
 
     // 이하 생성자 정의
-    pub fn ascii(item: Secs2ASCIIItem) -> Secs2Variant {
-        Secs2ASCII::new(item).as_enum()
+    pub fn ascii<I: Into<Secs2ASCIIItem>>(item: I) -> Secs2Variant {
+        Secs2ASCII::new(item.into()).as_enum()
     }
-    pub fn binary(item: Secs2BinaryItem) -> Secs2Variant {
-        Secs2Binary::new(item).as_enum()
+
+    pub fn binary<I: Into<Secs2BinaryItem>>(item: I) -> Secs2Variant {
+        Secs2Binary::new(item.into()).as_enum()
     }
-    pub fn boolean(item: Secs2BooleanItem2) -> Secs2Variant {
-        Secs2Boolean::from(item).as_enum()
+
+    pub fn boolean<I: Into<Secs2BooleanItem2>>(item: I) -> Secs2Variant {
+        Secs2Boolean::from(item.into()).as_enum()
     }
-    pub fn float4(item: Secs2Float4Item) -> Secs2Variant {
-        Secs2Float4::new(item).as_enum()
+
+    pub fn float4<I: Into<Secs2Float4Item>>(item: I) -> Secs2Variant {
+        Secs2Float4::new(item.into()).as_enum()
     }
-    pub fn float8(item: Secs2Float8Item) -> Secs2Variant {
-        Secs2Float8::new(item).as_enum()
+
+    pub fn float8<I: Into<Secs2Float8Item>>(item: I) -> Secs2Variant {
+        Secs2Float8::new(item.into()).as_enum()
     }
-    pub fn int1(item: Secs2Int1Item) -> Secs2Variant {
-        Secs2Int1::new(item).as_enum()
+
+    pub fn int1<I: Into<Secs2Int1Item>>(item: I) -> Secs2Variant {
+        Secs2Int1::new(item.into()).as_enum()
     }
-    pub fn int2(item: Secs2Int2Item) -> Secs2Variant {
-        Secs2Int2::new(item).as_enum()
+
+    pub fn int2<I: Into<Secs2Int2Item>>(item: I) -> Secs2Variant {
+        Secs2Int2::new(item.into()).as_enum()
     }
-    pub fn int4(item: Secs2Int4Item) -> Secs2Variant {
-        Secs2Int4::new(item).as_enum()
+
+    pub fn int4<I: Into<Secs2Int4Item>>(item: I) -> Secs2Variant {
+        Secs2Int4::new(item.into()).as_enum()
     }
-    pub fn int8(item: Secs2Int8Item) -> Secs2Variant {
-        Secs2Int8::new(item).as_enum()
+
+    pub fn int8<I: Into<Secs2Int8Item>>(item: I) -> Secs2Variant {
+        Secs2Int8::new(item.into()).as_enum()
     }
-    pub fn list(item: Secs2ListItem) -> Secs2Variant {
-        Secs2List::new(item).as_enum()
+
+    pub fn list<I: Into<Secs2ListItem>>(item: I) -> Secs2Variant {
+        Secs2List::new(item.into()).as_enum()
     }
-    pub fn uint1(item: Secs2Uint1Item) -> Secs2Variant {
-        Secs2Uint1::new(item).as_enum()
+
+    pub fn uint1<I: Into<Secs2Uint1Item>>(item: I) -> Secs2Variant {
+        Secs2Uint1::new(item.into()).as_enum()
     }
-    pub fn uint2(item: Secs2Uint2Item) -> Secs2Variant {
-        Secs2Uint2::new(item).as_enum()
+
+    pub fn uint2<I: Into<Secs2Uint2Item>>(item: I) -> Secs2Variant {
+        Secs2Uint2::new(item.into()).as_enum()
     }
-    pub fn uint4(item: Secs2Uint4Item) -> Secs2Variant {
-        Secs2Uint4::new(item).as_enum()
+
+    pub fn uint4<I: Into<Secs2Uint4Item>>(item: I) -> Secs2Variant {
+        Secs2Uint4::new(item.into()).as_enum()
     }
-    pub fn uint8(item: Secs2Uint8Item) -> Secs2Variant {
-        Secs2Uint8::new(item).as_enum()
+
+    pub fn uint8<I: Into<Secs2Uint8Item>>(item: I) -> Secs2Variant {
+        Secs2Uint8::new(item.into()).as_enum()
+    }
+
+    pub fn binary_unit(item: u8) -> Secs2Variant {
+        Self::binary(vec![item])
+    }
+
+    pub fn boolean_unit(item: bool) -> Secs2Variant {
+        Self::boolean(vec![item])
+    }
+
+    pub fn float4_unit(item: f32) -> Secs2Variant {
+        Self::float4(vec![item])
+    }
+
+    pub fn float8_unit(item: f64) -> Secs2Variant {
+        Self::float8(vec![item])
+    }
+
+    pub fn int1_unit(item: i8) -> Secs2Variant {
+        Self::int1(vec![item])
+    }
+
+    pub fn int2_unit(item: i16) -> Secs2Variant {
+        Self::int2(vec![item])
+    }
+
+    pub fn int4_unit(item: i32) -> Secs2Variant {
+        Self::int4(vec![item])
+    }
+
+    pub fn int8_unit(item: i64) -> Secs2Variant {
+        Self::int8(vec![item])
+    }
+
+    pub fn uint1_unit(item: u8) -> Secs2Variant {
+        Self::uint1(vec![item])
+    }
+
+    pub fn uint2_unit(item: u16) -> Secs2Variant {
+        Self::uint2(vec![item])
+    }
+
+    pub fn uint4_unit(item: u32) -> Secs2Variant {
+        Self::uint4(vec![item])
+    }
+
+    pub fn uint8_unit(item: u64) -> Secs2Variant {
+        Self::uint8(vec![item])
     }
 }
 
