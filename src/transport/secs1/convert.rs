@@ -44,7 +44,7 @@ pub fn decode(mut blocks: Vec<Secs1Block>) -> Result<SecsMessage, SecsMessageCon
     let function = header.function;
     let need_reply = header.need_reply();
 
-    let raw_bytes: Vec<u8> = blocks.iter().flat_map(|it| it.to_bytes()).collect();
+    let raw_bytes: Vec<u8> = blocks.into_iter().flat_map(|it| it.data).collect();
     let secs_value = Secs2Variant::try_from(raw_bytes.as_slice())
         .map_err(|e| SecsMessageConvertError::DecodeFailed(e))?;
 
@@ -54,7 +54,7 @@ pub fn decode(mut blocks: Vec<Secs1Block>) -> Result<SecsMessage, SecsMessageCon
     Ok(msg)
 }
 
-pub fn encode(msg: &SecsMessage) -> Result<Vec<Secs1Block>, SecsMessageConvertError> {
+pub fn encode(msg: SecsMessage) -> Result<Vec<Secs1Block>, SecsMessageConvertError> {
     let payload = &msg.payload;
     let stream = payload.stream;
     let function = payload.function;
@@ -100,12 +100,18 @@ mod tests {
 
     use crate::{
         core::SecsMessage,
-        transport::{DeviceId, Rbit, SystemByte, secs1::convert::encode},
+        transport::{
+            DeviceId, Rbit, SystemByte,
+            secs1::{
+                block::{Secs1Block, Secs1BlockHeader},
+                convert::{decode, encode},
+            },
+        },
     };
 
     /// primary + need recv 데이터를 요청받은 경우
     #[test]
-    fn test_recv_primary_need_reply() {
+    fn test_encode_recv_primary_need_reply() {
         let device_id = DeviceId(1016);
         let system_byte = SystemByte(3030);
         let rbit = Rbit(false);
@@ -138,7 +144,7 @@ mod tests {
             0xB1, 0x04, 0x00, 0x00, 0x03, 0xF2,
         ];
 
-        let blocks = encode(&msg).expect("message encode failed");
+        let blocks = encode(msg).expect("message encode failed");
 
         assert_eq!(blocks.len(), 1);
         let block = blocks.get(0).unwrap();
@@ -154,6 +160,225 @@ mod tests {
         assert_eq!(block.data, expected_data);
     }
 
-    // #[test]
-    // fn test_send() {}
+    /// multi block이 정상적으로 분리되는지 테스트
+    #[test]
+    fn test_encode_multi_block_msg() {
+        let device_id = DeviceId(1016);
+        let system_byte = SystemByte(3030);
+        let rbit = Rbit(false);
+
+        let payload = Secs2Message::new(
+            StreamId(1),
+            FunctionId(4),
+            false,
+            Secs2Variant::list(vec![
+                Secs2Variant::uint8(1001),
+                Secs2Variant::uint8(1002),
+                Secs2Variant::uint8(1003),
+                Secs2Variant::uint8(1004),
+                Secs2Variant::uint8(1005),
+                Secs2Variant::uint8(1006),
+                Secs2Variant::uint8(1007),
+                Secs2Variant::uint8(1008),
+                Secs2Variant::uint8(1009),
+                Secs2Variant::uint8(1010),
+                Secs2Variant::uint8(2001),
+                Secs2Variant::uint8(2002),
+                Secs2Variant::uint8(2003),
+                Secs2Variant::uint8(2004),
+                Secs2Variant::uint8(2005),
+                Secs2Variant::uint8(2006),
+                Secs2Variant::uint8(2007),
+                Secs2Variant::uint8(2008),
+                Secs2Variant::uint8(2009),
+                Secs2Variant::uint8(2010),
+                Secs2Variant::uint8(3001),
+                Secs2Variant::uint8(3002),
+                Secs2Variant::uint8(3003),
+                Secs2Variant::uint8(3004),
+                Secs2Variant::uint8(3005),
+                Secs2Variant::uint8(3006),
+                Secs2Variant::uint8(3007),
+                Secs2Variant::uint8(3008),
+                Secs2Variant::uint8(3009),
+                Secs2Variant::uint8(3010),
+            ]),
+        );
+
+        let expected_data1 = [
+            0x01, 0x1E, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xE9, 0xA1, 0x08,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xEA, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x03, 0xEB, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xEC,
+            0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xED, 0xA1, 0x08, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x03, 0xEE, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x03, 0xEF, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xF0, 0xA1, 0x08,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xF1, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x03, 0xF2, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xD1,
+            0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xD2, 0xA1, 0x08, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x07, 0xD3, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x07, 0xD4, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xD5, 0xA1, 0x08,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xD6, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x07, 0xD7, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xD8,
+            0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xD9, 0xA1, 0x08, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x07, 0xDA, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x0B, 0xB9, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0B, 0xBA, 0xA1, 0x08,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0B, 0xBB, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x0B, 0xBC, 0xA1, 0x08,
+        ];
+
+        let expected_data2 = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0B, 0xBD, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x0B, 0xBE, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0B, 0xBF,
+            0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0B, 0xC0, 0xA1, 0x08, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x0B, 0xC1, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x0B, 0xC2,
+        ];
+
+        let msg = SecsMessage::new(device_id, system_byte, rbit, payload);
+
+        let blocks = encode(msg).expect("message encode failed");
+
+        assert_eq!(blocks.len(), 2);
+        let block = &blocks[0];
+        assert_eq!(block.header.device_id, device_id);
+        assert_eq!(block.header.system_byte, system_byte);
+        assert_eq!(block.header.block_no, 1);
+        assert_eq!(block.header.stream, StreamId(1));
+        assert_eq!(block.header.function, FunctionId(4));
+        assert_eq!(block.header.rbit, Rbit(false));
+        assert_eq!(block.header.ebit, false);
+        assert_eq!(block.data, expected_data1);
+
+        let block = &blocks[1];
+        assert_eq!(block.header.device_id, device_id);
+        assert_eq!(block.header.system_byte, system_byte);
+        assert_eq!(block.header.block_no, 2);
+        assert_eq!(block.header.stream, StreamId(1));
+        assert_eq!(block.header.function, FunctionId(4));
+        assert_eq!(block.header.rbit, Rbit(false));
+        assert_eq!(block.header.ebit, true);
+        assert_eq!(block.data, expected_data2);
+    }
+
+    #[test]
+    fn test_decode_multi_block_msg() {
+        let data1 = [
+            0x01, 0x1E, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xE9, 0xA1, 0x08,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xEA, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x03, 0xEB, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xEC,
+            0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xED, 0xA1, 0x08, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x03, 0xEE, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x03, 0xEF, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xF0, 0xA1, 0x08,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xF1, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x03, 0xF2, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xD1,
+            0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xD2, 0xA1, 0x08, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x07, 0xD3, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x07, 0xD4, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xD5, 0xA1, 0x08,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xD6, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x07, 0xD7, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xD8,
+            0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0xD9, 0xA1, 0x08, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x07, 0xDA, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x0B, 0xB9, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0B, 0xBA, 0xA1, 0x08,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0B, 0xBB, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x0B, 0xBC, 0xA1, 0x08,
+        ];
+
+        let data2 = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0B, 0xBD, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x0B, 0xBE, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0B, 0xBF,
+            0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0B, 0xC0, 0xA1, 0x08, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x0B, 0xC1, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x0B, 0xC2,
+        ];
+
+        let device_id = DeviceId(1016);
+        let system_byte = SystemByte(3030);
+        let rbit = Rbit(false);
+        let expected = SecsMessage::new(
+            device_id,
+            system_byte,
+            rbit,
+            Secs2Message::new(
+                StreamId(1),
+                FunctionId(4),
+                false,
+                Secs2Variant::list(vec![
+                    Secs2Variant::uint8(1001),
+                    Secs2Variant::uint8(1002),
+                    Secs2Variant::uint8(1003),
+                    Secs2Variant::uint8(1004),
+                    Secs2Variant::uint8(1005),
+                    Secs2Variant::uint8(1006),
+                    Secs2Variant::uint8(1007),
+                    Secs2Variant::uint8(1008),
+                    Secs2Variant::uint8(1009),
+                    Secs2Variant::uint8(1010),
+                    Secs2Variant::uint8(2001),
+                    Secs2Variant::uint8(2002),
+                    Secs2Variant::uint8(2003),
+                    Secs2Variant::uint8(2004),
+                    Secs2Variant::uint8(2005),
+                    Secs2Variant::uint8(2006),
+                    Secs2Variant::uint8(2007),
+                    Secs2Variant::uint8(2008),
+                    Secs2Variant::uint8(2009),
+                    Secs2Variant::uint8(2010),
+                    Secs2Variant::uint8(3001),
+                    Secs2Variant::uint8(3002),
+                    Secs2Variant::uint8(3003),
+                    Secs2Variant::uint8(3004),
+                    Secs2Variant::uint8(3005),
+                    Secs2Variant::uint8(3006),
+                    Secs2Variant::uint8(3007),
+                    Secs2Variant::uint8(3008),
+                    Secs2Variant::uint8(3009),
+                    Secs2Variant::uint8(3010),
+                ]),
+            ),
+        );
+
+        // expected_data1 / expected_data2는 encode 테스트와 동일
+
+        let blocks = vec![
+            Secs1Block {
+                header: Secs1BlockHeader {
+                    device_id,
+                    system_byte,
+                    block_no: 1,
+                    wbit: false,
+                    stream: StreamId(1),
+                    function: FunctionId(4),
+                    rbit,
+                    ebit: false,
+                },
+                data: data1.to_vec(),
+            },
+            Secs1Block {
+                header: Secs1BlockHeader {
+                    device_id,
+                    system_byte,
+                    block_no: 2,
+                    wbit: false,
+                    stream: StreamId(1),
+                    function: FunctionId(4),
+                    rbit,
+                    ebit: true,
+                },
+                data: data2.to_vec(),
+            },
+        ];
+
+        let actual = decode(blocks).expect("message decode failed");
+
+        assert_eq!(expected.device_id, actual.device_id);
+        assert_eq!(expected.rbit, actual.rbit);
+        assert_eq!(expected.system_byte, actual.system_byte);
+
+        let expected_payload = expected.payload;
+        let actual_payload = actual.payload;
+
+        assert_eq!(expected_payload.stream, actual_payload.stream);
+        assert_eq!(expected_payload.function, actual_payload.function);
+        assert_eq!(expected_payload.need_reply, actual_payload.need_reply);
+    }
 }

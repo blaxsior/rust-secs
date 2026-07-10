@@ -164,7 +164,7 @@ impl Secs1MessageMachine {
                 system_byte,
             };
 
-            let blocks = match encode(&msg) {
+            let blocks = match encode(msg) {
                 Ok(it) => it,
                 Err(e) => {
                     self.emit_event(Secs1MessageEvent::ErrorOccured(SecsTransportError::MessageConvertFailed(e)));
@@ -202,7 +202,7 @@ impl Secs1MessageMachine {
                 }
             };
 
-            let blocks = match encode(&msg) {
+            let blocks = match encode(msg) {
                 Ok(it) => it,
                 Err(e) => {
                     self.emit_event(Secs1MessageEvent::ErrorOccured(SecsTransportError::MessageConvertFailed(e)));
