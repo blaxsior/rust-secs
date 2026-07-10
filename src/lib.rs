@@ -29,8 +29,8 @@ impl FunctionId {
     }
 }
 
-/// Secs Message 통신 시 사용하는 기본 메시지를 정의한다.
-pub struct SecsMessage {
+/// Secs-ii Message 통신 시 사용하는 기본 메시지를 정의한다.
+pub struct Secs2Message {
     /// SECS-II stream
     pub stream: StreamId,
     /// SECS-II function
@@ -41,7 +41,7 @@ pub struct SecsMessage {
     pub body: Secs2Variant,
 }
 
-impl SecsMessage {
+impl Secs2Message {
     pub fn new(
         stream: StreamId,
         function: FunctionId,
