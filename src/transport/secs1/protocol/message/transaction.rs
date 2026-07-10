@@ -120,7 +120,7 @@ impl Secs1MessageTransaction {
         if !self.is_expected(&block.header) {
             // primary first 아님 -> Block Error 발생
             if !block.header.is_primary() || !block.header.is_first_block() {
-                return Err(SecsTransportError::BlockError(block.header));
+                return Err(SecsTransportError::UnexpectedBlock(block.header));
             }
         }
 

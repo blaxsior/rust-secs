@@ -27,8 +27,30 @@ enum Secs1BlockTransferState {
     SEND(SendState),
     /// 데이터 수신 중
     RECEIVE(ReceiveState), // 수신한 length byte
-    /// 전송 후 종료 단계. 명세상 존재하나, 각 state에서 바로 IDLE 전이하도록 기능 구현 중
-    COMPLETION,
+
+                           // / 전송 후 종료 단계. 명세상 존재하나, 각 state에서 바로 IDLE 전이하도록 기능 구현 중
+                           // COMPLETION,
+}
+
+impl Secs1BlockTransferState {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Secs1BlockTransferState::IDLE => "IDLE",
+            Secs1BlockTransferState::LINECONTROL(line_control_state) => match line_control_state {
+                LineControlState::BeforeSendENQ => "LINECONTROL:BeforeENQ",
+                LineControlState::WaitForResponse => "LINECONTROL:WaitResp",
+            },
+            Secs1BlockTransferState::SEND(send_state) => match send_state {
+                SendState::BeforeSend => "SEND:BeforeSend",
+                SendState::WaitForAck => "SEND:WaitForACK",
+            },
+            Secs1BlockTransferState::RECEIVE(receive_state) => match receive_state {
+                ReceiveState::WaitingLength => "RECV:WaitLength",
+                ReceiveState::WaitingData { .. } => "RECV:WaitData",
+                ReceiveState::InvalidBlock => "RECV:InvalidBlock",
+            },
+        }
+    }
 }
 
 enum LineControlState {
@@ -92,7 +114,7 @@ pub struct Secs1BlockTransferMachine {
     /// 외부로 타임아웃 시작 알리는 큐. poll_timeout
     outgoing_timeout_queue: VecDeque<TimeoutTicket>,
     /// 외부 발송할 이벤트 목록을 저장해두는 큐. poll_event
-    event_queue: VecDeque<Secs1BlockTransferEvent>,
+    outgoing_event_queue: VecDeque<Secs1BlockTransferEvent>,
 
     timeout_manager: TimeoutManager,
 
@@ -123,16 +145,16 @@ impl Secs1BlockTransferMachine {
             max_retry: config.t2_rty_limit,
             incoming_blocks: VecDeque::new(),
             outgoing_blocks: VecDeque::new(),
-            event_queue: VecDeque::new(),
+            outgoing_event_queue: VecDeque::new(),
         }
     }
 
     /// 외부 시스템에 전송할 메시지를 담는다.
     fn emit_event(&mut self, output: Secs1BlockTransferEvent) {
-        self.event_queue.push_back(output);
+        self.outgoing_event_queue.push_back(output);
     }
 
-    // 상위로 블록을 보낸다.
+    /// 상위로 블록을 보낸다.
     fn emit_block(&mut self, block: Secs1Block) {
         self.outgoing_blocks.push_back(block);
     }
@@ -144,12 +166,14 @@ impl Secs1BlockTransferMachine {
 
     /// timeout을 시작한다.
     fn start_timeout(&mut self, timeout: SecsTimeoutUnit) {
+        log::debug!("[{}] start timeout {:?}", self.state.name(), timeout);
         let ticket = self.timeout_manager.issue(timeout);
         self.outgoing_timeout_queue.push_back(ticket);
     }
 
     /// timeout을 취소한다.
     fn cancel_timeout(&mut self, timeout: SecsTimeoutUnit) {
+        log::debug!("[{}] cancel timeout {:?}", self.state.name(), timeout);
         self.timeout_manager.cancel(timeout);
     }
 
@@ -162,7 +186,7 @@ impl Secs1BlockTransferMachine {
             Secs1BlockTransferState::LINECONTROL(_) => self.handle_line_control(),
             Secs1BlockTransferState::RECEIVE(_) => self.handle_receive(),
             Secs1BlockTransferState::SEND(_) => self.handle_send(),
-            Secs1BlockTransferState::COMPLETION => self.handle_completion(),
+            // Secs1BlockTransferState::COMPLETION => self.handle_completion(),
         }
     }
 
@@ -184,6 +208,7 @@ impl Secs1BlockTransferMachine {
             }
         } else {
             // 전송이 필요한 데이터가 존재 -> SEND 전이를 위해 LineControl 진입
+            log::debug!("[{}] switch to line control", self.state.name());
             self.switch_to_line_control();
         }
     }
@@ -193,10 +218,11 @@ impl Secs1BlockTransferMachine {
         if let Secs1BlockTransferState::LINECONTROL(line_control_state) = &self.state {
             match line_control_state {
                 LineControlState::BeforeSendENQ => {
+                    log::debug!("[{}] send ENQ, switch to recv", self.state.name());
                     self.write(self.codebytes(Secs1HandshakeCode::ENQ));
+                    self.start_timeout(SecsTimeoutUnit::T2); // ENQ 송신 후 응답 대기를 위한 T2 timer 시작
                     self.state =
                         Secs1BlockTransferState::LINECONTROL(LineControlState::WaitForResponse);
-                    self.start_timeout(SecsTimeoutUnit::T2); // ENQ 송신 후 응답 대기를 위한 T2 timer 시작
                 }
                 LineControlState::WaitForResponse => {
                     // ENQ 송신 후 상대방의 응답을 기다리는 상태 -> handle_idle과 유사하게 ENQ, EOT 수신 시 처리
@@ -205,11 +231,16 @@ impl Secs1BlockTransferMachine {
                             if self.mode == ConnectionRole::Passive
                                 && code == Secs1HandshakeCode::ENQ
                             {
+                                log::debug!(
+                                    "[{}] passive + ENQ, switch to RECV",
+                                    self.state.name()
+                                );
                                 // 나는 passive인데 상대에게 ENQ 받음 -> 양보하고 RECEIVE 모드로 전이
                                 self.switch_to_receive();
                                 return;
                             } else if code == Secs1HandshakeCode::EOT {
                                 // EOT를 정상적으로 받아 SEND 모드로 전이
+                                log::debug!("[{}] active + EOT, switch to SEND", self.state.name());
                                 self.switch_to_send();
                                 return;
                             }
@@ -326,6 +357,7 @@ impl Secs1BlockTransferMachine {
         if let Some(byte) = self.incoming_buffer.pop_front() {
             // length byte를 수신한 경우
             self.cancel_timeout(SecsTimeoutUnit::T2);
+            log::debug!("[{}] length byte received", self.state.name());
             self.state = Secs1BlockTransferState::RECEIVE(ReceiveState::WaitingData {
                 length: byte,
                 buffer: Vec::new(),
@@ -359,15 +391,25 @@ impl Secs1BlockTransferMachine {
                     if let Ok(block) = Secs1Block::try_from(data_part)
                         && block.verify_checksum(expected)
                     {
-                        // 아이템 & ACK 전송
+                        log::debug!(
+                            "[{}] success to recv block. {:?}",
+                            self.state.name(),
+                            block.header
+                        );
+
                         self.emit_block(block);
                         self.completion_with_send_ack();
+                        log::debug!("[{}] send ACK, return to idle", self.state.name());
                         return;
                     } else {
                         // 블록 파싱 실패 -> 남은 T1 기간동안 데이터 전부 버린 후 NAK 전송 + IDLE 복귀
                         self.emit_event(Secs1BlockTransferEvent::ReceiveFailed {
-                            error: SecsTransportError::InvalidBlock,
+                            error: SecsTransportError::BlockError,
                         });
+                        log::warn!(
+                            "[{}] something wrong when parsing block... skip next bytes",
+                            self.state.name()
+                        );
                         self.state = Secs1BlockTransferState::RECEIVE(ReceiveState::InvalidBlock);
                         break;
                     }
@@ -391,10 +433,12 @@ impl Secs1BlockTransferMachine {
 
         if let Secs1BlockTransferState::RECEIVE(ReceiveState::InvalidBlock) = self.state {
             self.incoming_buffer.clear();
-        } else {
-            panic!(
-                "invalid state: process_invalid_block should only be called in InvalidBlock state"
+            log::warn!(
+                "[{}] invalid block state. clear incoming buffer",
+                self.state.name()
             );
+        } else {
+            panic!("invalid state: process_invalid_block only called in InvalidBlock state");
         }
 
         self.start_timeout(SecsTimeoutUnit::T1); // 다음 데이터 대기(T1)
@@ -411,17 +455,19 @@ impl Secs1BlockTransferMachine {
     }
 
     /// completion state를 처리한다.(경우에 따라 구현 X)
-    pub fn handle_completion(&mut self) {}
+    // pub fn handle_completion(&mut self) {}
 
     /// RECEIVE 중 timeout 발생으로 인한 NAK 전송 및 IDLE 복귀 처리
     pub fn completion_with_send_nak(&mut self) {
         self.write(self.codebytes(Secs1HandshakeCode::NAK));
+        log::debug!("[{}] send nak, return to idle", self.state.name());
         self.state = Secs1BlockTransferState::IDLE; // NAK 전송 후 IDLE로 복귀
     }
 
     /// RECEIVE 후 정상 처리로 인한 ACK 전송 및 IDLE 복귀 처리
     pub fn completion_with_send_ack(&mut self) {
         self.write(self.codebytes(Secs1HandshakeCode::ACK));
+        log::debug!("[{}] send ack, return to idle", self.state.name());
         self.state = Secs1BlockTransferState::IDLE; // ACK 전송 후 IDLE로 복귀
     }
 
@@ -431,7 +477,7 @@ impl Secs1BlockTransferMachine {
     }
 }
 
-impl Protocol<&[u8], Secs1Block, Secs1BlockTransferEvent> for Secs1BlockTransferMachine {
+impl Protocol<&[u8], Secs1Block, ()> for Secs1BlockTransferMachine {
     type Rout = Secs1Block;
     type Wout = Vec<u8>;
     type Eout = Secs1BlockTransferEvent;
@@ -474,8 +520,13 @@ impl Protocol<&[u8], Secs1Block, Secs1BlockTransferEvent> for Secs1BlockTransfer
         // 2. 상태(State)와 유닛(Unit)을 튜플로 묶어서 매칭
         match (&self.state, expired_unit) {
             // LINECONTROL or SEND 상태 & T2 타임아웃
-            (Secs1BlockTransferState::LINECONTROL(_), SecsTimeoutUnit::T2)
-            | (Secs1BlockTransferState::SEND(_), SecsTimeoutUnit::T2) => {
+            (Secs1BlockTransferState::LINECONTROL(..), SecsTimeoutUnit::T2) => {
+                log::warn!("[{}] T2 timeout.", self.state.name());
+                self.retrigger_line_control()
+            }
+
+            (Secs1BlockTransferState::SEND(..), SecsTimeoutUnit::T2) => {
+                log::warn!("[{}] T2 timeout.", self.state.name());
                 self.retrigger_line_control()
             }
 
@@ -487,6 +538,7 @@ impl Protocol<&[u8], Secs1Block, Secs1BlockTransferEvent> for Secs1BlockTransfer
                 self.emit_event(Secs1BlockTransferEvent::ReceiveFailed {
                     error: SecsTransportError::Timeout(SecsTimeoutUnit::T2),
                 });
+                log::warn!("[{}] T2 timeout.", self.state.name());
                 self.completion_with_send_nak();
             }
             // RECEIVE 상태 & T1 타임아웃 (WaitingData or InvalidBlock)
@@ -497,14 +549,15 @@ impl Protocol<&[u8], Secs1Block, Secs1BlockTransferEvent> for Secs1BlockTransfer
                 self.emit_event(Secs1BlockTransferEvent::ReceiveFailed {
                     error: SecsTransportError::Timeout(SecsTimeoutUnit::T1),
                 });
+                log::warn!("[{}] T1 timeout.", self.state.name());
                 self.completion_with_send_nak();
             }
 
             (Secs1BlockTransferState::RECEIVE(ReceiveState::InvalidBlock), SecsTimeoutUnit::T1) => {
                 self.emit_event(Secs1BlockTransferEvent::ReceiveFailed {
-                    error: SecsTransportError::InvalidBlock,
+                    error: SecsTransportError::BlockError,
                 });
-
+                log::warn!("[{}] T1 timeout.", self.state.name());
                 self.completion_with_send_nak();
             }
             // 상태와 타임아웃 유닛이 매칭되지 않으면 무시
@@ -518,15 +571,13 @@ impl Protocol<&[u8], Secs1Block, Secs1BlockTransferEvent> for Secs1BlockTransfer
         self.outgoing_timeout_queue.pop_front()
     }
 
-    fn handle_event(&mut self, _evt: Secs1BlockTransferEvent) -> Result<(), Self::Error> {
-        // 외부에서 받을 데이터가 있는지 고민 중.
-        // timeout 개념이 존재해서 "즉시" 초기화 필요한 경우가 드물다.
-        self.run();
+    fn handle_event(&mut self, _evt: ()) -> Result<(), Self::Error> {
+        // 별도 구현 없음
         Ok(())
     }
 
     /// 외부 시스템에서 전송할 메시지를 가져간다.
     fn poll_event(&mut self) -> Option<Self::Eout> {
-        self.event_queue.pop_front()
+        self.outgoing_event_queue.pop_front()
     }
 }

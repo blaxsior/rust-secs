@@ -49,12 +49,12 @@ impl TryFrom<&[u8]> for Secs1Block {
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value.len() < 10 || value.len() > 254 {
-            return Err(SecsTransportError::InvalidBlock);
+            return Err(SecsTransportError::InvalidBlockLength(value.len()));
         }
 
         let raw_header: [u8; 10] = value[0..10]
             .try_into()
-            .map_err(|_| SecsTransportError::InvalidBlock)?;
+            .map_err(|_| SecsTransportError::InvalidBlockHeader)?;
 
         let header = Secs1BlockHeader::try_from(raw_header)?;
 
@@ -168,4 +168,154 @@ pub enum Secs1HandshakeCode {
     ACK = 0b00000110,
     // incorrect reception
     NAK = 0b00010101,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_secs1_block_header_to_bytes() {
+        let header = Secs1BlockHeader {
+            rbit: Rbit(true),
+            device_id: DeviceId(0x1234),
+            wbit: true,
+            stream: StreamId(0x45),
+            function: FunctionId(0x67),
+            ebit: true,
+            block_no: 0x1234,
+            system_byte: SystemByte(0x89ABCDEF),
+        };
+
+        assert_eq!(
+            header.to_bytes(),
+            [
+                0x92, // R=1, device_id high=0x12
+                0x34, 0xC5, // W=1, stream=0x45
+                0x67, 0x92, // E=1, block_no high=0x12
+                0x34, 0x89, 0xAB, 0xCD, 0xEF,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_secs1_block_header_try_from() {
+        let bytes = [0x92, 0x34, 0xC5, 0x67, 0x92, 0x34, 0x89, 0xAB, 0xCD, 0xEF];
+
+        let header = Secs1BlockHeader::try_from(bytes).unwrap();
+
+        assert_eq!(header.rbit, Rbit(true));
+        assert_eq!(header.device_id, DeviceId(0x1234));
+        assert!(header.wbit);
+        assert_eq!(header.stream, StreamId(0x45));
+        assert_eq!(header.function, FunctionId(0x67));
+        assert!(header.ebit);
+        assert_eq!(header.block_no, 0x1234);
+        assert_eq!(header.system_byte, SystemByte(0x89ABCDEF));
+    }
+
+    #[test]
+    fn test_secs1_block_header_round_trip() {
+        let header = Secs1BlockHeader {
+            rbit: Rbit(true),
+            device_id: DeviceId(0x1234),
+            wbit: true,
+            stream: StreamId(0x45),
+            function: FunctionId(0x67),
+            ebit: true,
+            block_no: 0x1234,
+            system_byte: SystemByte(0x89ABCDEF),
+        };
+
+        let bytes = header.to_bytes();
+        let decoded = Secs1BlockHeader::try_from(bytes).unwrap();
+
+        assert_eq!(decoded, header);
+    }
+
+    fn sample_header() -> Secs1BlockHeader {
+        Secs1BlockHeader {
+            rbit: Rbit(true),
+            device_id: DeviceId(0x1234),
+            wbit: true,
+            stream: StreamId(0x45),
+            function: FunctionId(0x67),
+            ebit: true,
+            block_no: 0x1234,
+            system_byte: SystemByte(0x89ABCDEF),
+        }
+    }
+
+    fn sample_block() -> Secs1Block {
+        Secs1Block {
+            header: sample_header(),
+            data: vec![0x11, 0x22, 0x33, 0x44],
+        }
+    }
+
+    #[test]
+    fn test_secs1_block_to_bytes() {
+        let block = sample_block();
+
+        assert_eq!(
+            block.to_bytes(),
+            vec![
+                0x92, 0x34, 0xC5, 0x67, 0x92, 0x34, 0x89, 0xAB, 0xCD, 0xEF, 0x11, 0x22, 0x33, 0x44,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_secs1_block_try_from() {
+        let raw = [
+            0x92, 0x34, 0xC5, 0x67, 0x92, 0x34, 0x89, 0xAB, 0xCD, 0xEF, 0x11, 0x22, 0x33, 0x44,
+        ];
+
+        let block = Secs1Block::try_from(raw.as_slice()).unwrap();
+
+        assert_eq!(block.header, sample_header());
+        assert_eq!(block.data, vec![0x11, 0x22, 0x33, 0x44]);
+    }
+
+    #[test]
+    fn test_secs1_block_round_trip() {
+        let block = sample_block();
+
+        let bytes = block.to_bytes();
+        let decoded = Secs1Block::try_from(bytes.as_slice()).unwrap();
+
+        assert_eq!(decoded, block);
+    }
+
+    #[test]
+    fn test_secs1_block_checksum() {
+        let block = sample_block();
+
+        let expected = block
+            .to_bytes()
+            .iter()
+            .fold(0u16, |acc, b| acc.wrapping_add(*b as u16));
+
+        assert_eq!(block.checksum(), expected);
+        assert!(block.verify_checksum(expected));
+        assert!(!block.verify_checksum(expected.wrapping_add(1)));
+    }
+
+    #[test]
+    fn test_secs1_block_try_from_invalid_length() {
+        assert!(matches!(
+            Secs1Block::try_from(&[][..]),
+            Err(SecsTransportError::InvalidBlockLength(0))
+        ));
+
+        assert!(matches!(
+            Secs1Block::try_from(&[0u8; 9][..]),
+            Err(SecsTransportError::InvalidBlockLength(9))
+        ));
+
+        assert!(matches!(
+            Secs1Block::try_from(&[0u8; 255][..]),
+            Err(SecsTransportError::InvalidBlockLength(255))
+        ));
+    }
 }

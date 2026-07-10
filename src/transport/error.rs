@@ -27,13 +27,20 @@ pub enum SecsTransportError {
     Timeout(SecsTimeoutUnit),
 
     #[error("invalid block")]
-    InvalidBlock,
+    InvalidBlockHeader,
+
+    #[error("invalid block length. expected [10..254], found {0}")]
+    InvalidBlockLength(usize),
 
     #[error("message convert failed: {0:?}")]
     MessageConvertFailed(SecsMessageConvertError),
 
-    #[error("invalid block {0:?}")]
-    BlockError(Secs1BlockHeader),
+    #[error("invalid block")]
+    BlockError,
+
+    #[error("unexpected block {0:?}")]
+    UnexpectedBlock(Secs1BlockHeader),
+
 
     #[error("unknown device id: {0:?}")]
     UnknownDeviceId(DeviceId),
