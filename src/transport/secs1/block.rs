@@ -70,16 +70,14 @@ impl TryFrom<&[u8]> for Secs1Block {
 ///
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Secs1BlockHeader {
-    /// reverse bit. eqp -> host인 경우 true
-    pub rbit: Rbit,
     /// 통신 대상 장치의 ID 값
     pub device_id: DeviceId,
-
+    /// reverse bit. eqp -> host인 경우 true
+    pub rbit: Rbit,
     /// wait bit. primary msg에 대한 응답이 필요한 경우 true
     pub wbit: bool,
     pub stream: StreamId,
     pub function: FunctionId,
-
     /// end bit. 마지막 block인 경우 true
     pub ebit: bool,
     /// block 번호. 단일 block은 0 허용, 아니면 1부터 시작하여 1씩 증가
