@@ -309,7 +309,7 @@ impl Secs1MessageTransaction {
             && expected.stream == actual.stream
             && expected.function == actual.function
             && expected.device_id == actual.device_id
-            && expected.system_bytes == actual.system_bytes;
+            && expected.system_byte == actual.system_byte;
     }
 
     /// reply block expected header
@@ -323,7 +323,7 @@ impl Secs1MessageTransaction {
             && expected.stream == actual.stream
             && expected.function == actual.function
             && expected.device_id == actual.device_id
-            && expected.system_bytes == actual.system_bytes;
+            && expected.system_byte == actual.system_byte;
     }
 
     /// inter block timer(T4) 지정 + timer 체크 조건 설정
@@ -382,27 +382,12 @@ impl Secs1MessageTransaction {
 
 #[cfg(test)]
 mod tests {
-    use secs_ii::{FunctionId, SecsMessage, StreamId, item::Secs2Variant};
+    use secs_ii::{FunctionId, StreamId, item::Secs2Variant};
 
     /// primary + need recv 데이터를 요청받은 경우
     #[test]
     fn test_recv_primary_need_reply() {
-        let msg = SecsMessage::new(
-            StreamId(1), 
-            FunctionId(3), 
-            true,
-            Secs2Variant::list(vec![
-                Secs2Variant::uint4_list(vec![1001]),
-                Secs2Variant::uint4_list(vec![1002]),
-                Secs2Variant::uint4_list(vec![1003]),
-                Secs2Variant::uint4_list(vec![1004]),
-                Secs2Variant::uint4_list(vec![1005]),
-                Secs2Variant::uint4_list(vec![1006]),
-                Secs2Variant::uint4_list(vec![1007]),
-                Secs2Variant::uint4_list(vec![1008]),
-                Secs2Variant::uint4_list(vec![1009])
-            ])
-        );
+
     }
 
     #[test]

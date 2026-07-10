@@ -85,7 +85,7 @@ pub struct Secs1BlockHeader {
     /// block 번호. 단일 block은 0 허용, 아니면 1부터 시작하여 1씩 증가
     pub block_no: u16,
     /// block transfer에 대한 트랜잭션을 식별하기 위한 byte 정보
-    pub system_bytes: SystemByte,
+    pub system_byte: SystemByte,
 }
 
 impl Secs1BlockHeader {
@@ -101,7 +101,7 @@ impl Secs1BlockHeader {
         h[4] = ((self.ebit as u8) << 7) | ((self.block_no >> 8) as u8 & WITHOUT_MSB);
         h[5] = self.block_no as u8;
 
-        h[6..10].copy_from_slice(&self.system_bytes.0.to_be_bytes());
+        h[6..10].copy_from_slice(&self.system_byte.0.to_be_bytes());
 
         h
     }
@@ -151,7 +151,7 @@ impl TryFrom<[u8; 10]> for Secs1BlockHeader {
             ebit: h[4] & MSB_ONLY != 0,
             block_no: u16::from_be_bytes([h[4] & WITHOUT_MSB, h[5]]),
 
-            system_bytes: SystemByte(u32::from_be_bytes([h[6], h[7], h[8], h[9]])),
+            system_byte: SystemByte(u32::from_be_bytes([h[6], h[7], h[8], h[9]])),
         })
     }
 }

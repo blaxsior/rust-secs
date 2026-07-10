@@ -1,10 +1,12 @@
 use alloc::vec::Vec;
-use secs_ii::{SecsMessage, convert::secs2::serialize::Encode, item::Secs2Variant};
+use secs_ii::{Secs2Message, convert::secs2::serialize::Encode, item::Secs2Variant};
 
-use crate::transport::{
-    DeviceId, MessageDirection, SystemByte,
-    error::SecsMessageConvertError,
-    secs1::block::{Secs1Block, Secs1BlockHeader},
+use crate::{
+    core::SecsMessage,
+    transport::{
+        error::SecsMessageConvertError,
+        secs1::block::{Secs1Block, Secs1BlockHeader},
+    },
 };
 
 pub fn decode(mut blocks: Vec<Secs1Block>) -> Result<SecsMessage, SecsMessageConvertError> {
@@ -34,6 +36,10 @@ pub fn decode(mut blocks: Vec<Secs1Block>) -> Result<SecsMessage, SecsMessageCon
         return Err(SecsMessageConvertError::MissingEbit);
     }
 
+    let device_id = header.device_id;
+    let system_byte = header.system_byte;
+    let rbit = header.rbit;
+
     let stream = header.stream;
     let function = header.function;
     let need_reply = header.need_reply();
@@ -42,21 +48,20 @@ pub fn decode(mut blocks: Vec<Secs1Block>) -> Result<SecsMessage, SecsMessageCon
     let secs_value = Secs2Variant::try_from(raw_bytes.as_slice())
         .map_err(|e| SecsMessageConvertError::DecodeFailed(e))?;
 
-    Ok(SecsMessage::new(stream, function, need_reply, secs_value))
+    let payload = Secs2Message::new(stream, function, need_reply, secs_value);
+    let msg = SecsMessage::new(device_id, system_byte, rbit, payload);
+
+    Ok(msg)
 }
 
-pub fn encode(
-    device_id: DeviceId,
-    system_bytes: SystemByte,
-    direction: MessageDirection,
-    msg: SecsMessage,
-) -> Result<Vec<Secs1Block>, SecsMessageConvertError> {
-    let stream = msg.stream;
-    let function = msg.function;
-    let need_reply = msg.need_reply;
+pub fn encode(msg: &SecsMessage) -> Result<Vec<Secs1Block>, SecsMessageConvertError> {
+    let payload = &msg.payload;
+    let stream = payload.stream;
+    let function = payload.function;
+    let need_reply = payload.need_reply;
 
     let mut raw_data = Vec::new();
-    if let Err(err) = msg.body.encode(&mut raw_data) {
+    if let Err(err) = payload.body.encode(&mut raw_data) {
         return Err(SecsMessageConvertError::EncodeFailed(err));
     }
 
@@ -68,14 +73,14 @@ pub fn encode(
 
             // 헤더 구성
             let header = Secs1BlockHeader {
-                device_id: device_id,
-                rbit: direction.into(),
+                device_id: msg.device_id,
+                rbit: msg.rbit,
                 stream: stream,
                 function: function,
                 wbit: need_reply,
                 ebit: is_last,
                 block_no: (i + 1) as u16,
-                system_bytes,
+                system_byte: msg.system_byte,
                 // 기타 헤더 필드 설정...
             };
 
@@ -91,16 +96,21 @@ pub fn encode(
 
 #[cfg(test)]
 mod tests {
-    use secs_ii::{FunctionId, SecsMessage, StreamId, item::Secs2Variant};
+    use secs_ii::{FunctionId, Secs2Message, StreamId, item::Secs2Variant};
 
-    use crate::transport::{DeviceId, MessageDirection, Rbit, SystemByte, secs1::convert::encode};
+    use crate::{
+        core::SecsMessage,
+        transport::{DeviceId, Rbit, SystemByte, secs1::convert::encode},
+    };
 
     /// primary + need recv 데이터를 요청받은 경우
     #[test]
     fn test_recv_primary_need_reply() {
         let device_id = DeviceId(1016);
-        let system_bytes = SystemByte(3030);
-        let msg = SecsMessage::new(
+        let system_byte = SystemByte(3030);
+        let rbit = Rbit(false);
+
+        let payload = Secs2Message::new(
             StreamId(1),
             FunctionId(3),
             true,
@@ -117,8 +127,8 @@ mod tests {
                 Secs2Variant::uint4(1010),
             ]),
         );
+        let msg = SecsMessage::new(device_id, system_byte, rbit, payload);
         // host -> eqp 가정
-        let direction = MessageDirection::Forward;
 
         let expected_data = vec![
             0x01, 0x0A, 0xB1, 0x04, 0x00, 0x00, 0x03, 0xE9, 0xB1, 0x04, 0x00, 0x00, 0x03, 0xEA,
@@ -128,17 +138,19 @@ mod tests {
             0xB1, 0x04, 0x00, 0x00, 0x03, 0xF2,
         ];
 
-        let blocks =
-            encode(device_id, system_bytes, direction, msg).expect("message encode failed");
+        let blocks = encode(&msg).expect("message encode failed");
 
         assert_eq!(blocks.len(), 1);
         let block = blocks.get(0).unwrap();
         let header = &block.header;
 
+        assert_eq!(header.device_id, device_id);
+        assert_eq!(header.system_byte, system_byte);
         assert_eq!(header.block_no, 1);
         assert_eq!(header.stream, StreamId(1));
         assert_eq!(header.function, FunctionId(3));
         assert_eq!(header.rbit, Rbit(false));
+        assert_eq!(header.ebit, true);
         assert_eq!(block.data, expected_data);
     }
 

@@ -1,3 +1,4 @@
+use crate::core::SecsMessage;
 use crate::transport::DeviceId;
 use crate::transport::MessageDirection;
 use crate::transport::TransactionOwner;
@@ -23,7 +24,7 @@ use alloc::vec::Vec;
 use sansio::Protocol;
 
 use secs_ii::StreamId;
-use secs_ii::{FunctionId, SecsMessage};
+use secs_ii::{FunctionId};
 
 pub mod tansaction_manager;
 pub mod transaction;
@@ -146,19 +147,15 @@ impl Secs1MessageMachine {
             (ConnectionRole::Passive, MessageDirection::Reverse) => TransactionOwner::Local,
         };
 
-        TransactionKey::new(transaction_owner, header.system_bytes)
+        TransactionKey::new(transaction_owner, header.system_byte)
     }
 
     fn process_send(&mut self, msg: SecsMessage) {
-        // 1.  S2F50인 경우 -> 기존 프로세스 참조
-        let stream = msg.stream;
-        let function = msg.function;
+        // 1.  SxFy, y&1 == 0인 경우 -> 기존 프로세스 참조
+        let stream = msg.payload.stream;
+        let function = msg.payload.function;
 
         if function.is_primary() {
-            let direction = match self.role {
-                ConnectionRole::Active => MessageDirection::Forward,
-                ConnectionRole::Passive => MessageDirection::Reverse,
-            };
             let system_byte = self.generate_system_byte();
             let transaction_key = 
             // 요청 -> 트랜잭션을 새롭게 생성
@@ -167,7 +164,7 @@ impl Secs1MessageMachine {
                 system_byte,
             };
 
-            let blocks = match encode(self.device_id, system_byte, direction, msg) {
+            let blocks = match encode(&msg) {
                 Ok(it) => it,
                 Err(e) => {
                     self.emit_event(Secs1MessageEvent::ErrorOccured(SecsTransportError::MessageConvertFailed(e)));
@@ -205,17 +202,7 @@ impl Secs1MessageMachine {
                 }
             };
 
-            let last_header = match transaction.get_last_header() {
-                Some(h) => h,
-                None => return,
-            };
-
-            let system_byte = last_header.system_bytes;
-            // 메시지는 반대 방향으로
-            let direction = last_header.direction().opposite();
-
-            
-            let blocks = match encode(self.device_id, system_byte, direction, msg) {
+            let blocks = match encode(&msg) {
                 Ok(it) => it,
                 Err(e) => {
                     self.emit_event(Secs1MessageEvent::ErrorOccured(SecsTransportError::MessageConvertFailed(e)));
