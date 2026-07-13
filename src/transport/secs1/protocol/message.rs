@@ -1,9 +1,10 @@
 use crate::core::SecsMessage;
 use crate::transport::DeviceId;
+use crate::transport::secs1::block;
 use crate::transport::secs1::convert::decode;
 use crate::transport::secs1::convert::encode;
-use crate::transport::secs1::protocol::message::tansaction_manager::Secs1TransactionManager;
 use crate::transport::secs1::protocol::message::transaction::Secs1TransactionEffect;
+use crate::transport::secs1::protocol::message::transaction_manager::Secs1TransactionManager;
 use crate::{
     transport::{
         ConnectionRole, SecsTimeoutUnit, SystemByte, TransactionKey,
@@ -21,11 +22,11 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use sansio::Protocol;
 
+use secs_ii::FunctionId;
 use secs_ii::StreamId;
-use secs_ii::{FunctionId};
 
-pub mod tansaction_manager;
 pub mod transaction;
+pub mod transaction_manager;
 
 /// secs-i message protocol 수행 중 외부에서 주입하는 이벤트(블록 정상 송신 등)
 pub enum Secs1MessageSignal {
@@ -149,26 +150,33 @@ impl Secs1MessageMachine {
 
         if function.is_primary() {
             let system_byte = self.generate_system_byte();
-            
+
             // 요청 -> 트랜잭션을 새롭게 생성
             let transaction_key = TransactionKey::from(self.role, msg.rbit.into(), system_byte);
 
             let blocks = match encode(msg) {
                 Ok(it) => it,
                 Err(e) => {
-                    self.emit_event(Secs1MessageEvent::ErrorOccured(SecsTransportError::MessageConvertFailed(e)));
+                    self.emit_event(Secs1MessageEvent::ErrorOccured(
+                        SecsTransportError::MessageConvertFailed(e),
+                    ));
                     return;
                 }
             };
 
-            let transaction = match self.transaction_manager.create_send(&transaction_key, blocks) {
+            let transaction = match self
+                .transaction_manager
+                .create_send(&transaction_key, blocks)
+            {
                 Some(t) => t,
                 None => {
-                    self.emit_event(Secs1MessageEvent::ErrorOccured(SecsTransportError::NoSuchTransaction(transaction_key)));
+                    self.emit_event(Secs1MessageEvent::ErrorOccured(
+                        SecsTransportError::NoSuchTransaction(transaction_key),
+                    ));
                     return;
-                },
+                }
             };
-            if let Some(block) = transaction.send_next() {
+            if let Some(block) = transaction.poll_send() {
                 self.write_block(block);
             }
         } else {
@@ -186,7 +194,9 @@ impl Secs1MessageMachine {
             let transaction = match self.transaction_manager.find(&transaction_key) {
                 Some(t) => t,
                 None => {
-                    self.emit_event(Secs1MessageEvent::ErrorOccured(SecsTransportError::NoSuchTransaction(transaction_key)));
+                    self.emit_event(Secs1MessageEvent::ErrorOccured(
+                        SecsTransportError::NoSuchTransaction(transaction_key),
+                    ));
                     return;
                 }
             };
@@ -194,13 +204,15 @@ impl Secs1MessageMachine {
             let blocks = match encode(msg) {
                 Ok(it) => it,
                 Err(e) => {
-                    self.emit_event(Secs1MessageEvent::ErrorOccured(SecsTransportError::MessageConvertFailed(e)));
+                    self.emit_event(Secs1MessageEvent::ErrorOccured(
+                        SecsTransportError::MessageConvertFailed(e),
+                    ));
                     return;
                 }
             };
 
             transaction.handle_reply(&transaction_key, blocks);
-            if let Some(block) = transaction.send_next() {
+            if let Some(block) = transaction.poll_send() {
                 self.write_block(block);
             }
         }
@@ -224,16 +236,9 @@ impl Secs1MessageMachine {
             },
         };
 
-        match transaction.handle_receive(block) {
-            Ok(_) => {
-                let effects = transaction.poll_effects();
-                self.handle_effects(effects, &transaction_key);
-            }
-            Err(error) => {
-                self.transaction_manager.remove(&transaction_key);
-                self.emit_event(Secs1MessageEvent::ErrorOccured(error));
-            }
-        }
+        transaction.handle_receive(block);
+        let effects = transaction.poll_effects();
+        self.handle_effects(effects, &transaction_key);
     }
 
     fn handle_effects(
@@ -316,7 +321,7 @@ impl Secs1MessageMachine {
     }
 
     // 외부 signal에 대해 아이템을 처리한다.
-    fn process_signal(&mut self, signal:Secs1MessageSignal) {
+    fn process_signal(&mut self, signal: Secs1MessageSignal) {
         // send 처리를 위함
         let header = match signal {
             Secs1MessageSignal::BlockSendSuccess { header } => header,
@@ -324,16 +329,14 @@ impl Secs1MessageMachine {
         };
 
         let transaction_key = self.get_transaction_key(&header);
-        let (next_block, effects) = {
-            if let Some(transaction) = self.transaction_manager.find(&transaction_key) {
-                let block = transaction.handle_signal(signal);
-                let effects = transaction.poll_effects();
-                (block, effects)
-            } else {
-                (None, Vec::new())
-            }
+        let Some(transaction) = self.transaction_manager.find(&transaction_key) else {
+            return;
         };
-        if let Some(block) = next_block {
+
+        let block = transaction.poll_send();
+        let effects = transaction.poll_effects();
+
+        if let Some(block) = block {
             self.write_block(block);
         }
 

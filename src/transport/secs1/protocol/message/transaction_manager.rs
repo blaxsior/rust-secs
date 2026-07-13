@@ -1,8 +1,8 @@
 use crate::transport::{
     TransactionKey,
     secs1::{
-        block::Secs1Block,
-        protocol::message::transaction::{Secs1MessageTransaction, Secs1TransactionState},
+        block::{Secs1Block},
+        protocol::message::transaction::{Secs1MessageTransaction},
     },
 };
 use alloc::collections::BTreeMap;
@@ -22,10 +22,10 @@ impl Secs1TransactionManager {
     pub fn create_send(
         &mut self,
         key: &TransactionKey,
-        data: Vec<Secs1Block>,
+        blocks: Vec<Secs1Block>,
     ) -> Option<&mut Secs1MessageTransaction> {
         let transaction =
-            Secs1MessageTransaction::new(*key, Secs1TransactionState::Recv { blocks: data });
+            Secs1MessageTransaction::new_send(*key, blocks);
         self.transaction_map.insert(*key, transaction);
 
         self.find(key)
@@ -33,7 +33,7 @@ impl Secs1TransactionManager {
 
     pub fn create_recv(&mut self, key: &TransactionKey) -> Option<&mut Secs1MessageTransaction> {
         let transaction =
-            Secs1MessageTransaction::new(*key, Secs1TransactionState::Recv { blocks: Vec::new() });
+            Secs1MessageTransaction::new_recv(*key);
         self.transaction_map.insert(*key, transaction);
 
         self.find(key)

@@ -92,6 +92,9 @@ pub struct DeviceId(pub u16);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rbit(bool);
 impl Rbit {
+    pub const FORWARD: Self = Self(false);
+    pub const REVERSE: Self = Self(true);
+
     /// 보수 값을 반환
     pub const fn complement(self) -> Self {
         Self(!self.0)
