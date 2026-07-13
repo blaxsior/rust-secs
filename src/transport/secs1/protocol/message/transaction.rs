@@ -1,7 +1,7 @@
 use crate::transport::error::SecsTransportError;
 use crate::transport::secs1::block::Secs1Block;
 use crate::transport::secs1::{block::Secs1BlockHeader, protocol::message::Secs1MessageSignal};
-use crate::transport::{SecsTimeoutUnit, TransactionKey, TransactionOwner};
+use crate::transport::{SecsTimeoutUnit, TransactionKey};
 
 use alloc::collections::VecDeque;
 use alloc::vec;
@@ -248,20 +248,10 @@ impl Secs1MessageTransaction {
                 log::debug!("message send success. owner = {:?}", self.id.owner);
                 self.emit_effect(Secs1TransactionEffect::SendComplete);
 
-                match self.id.owner {
-                    // 내가 primary message block을 다 보낸 상태
-                    TransactionOwner::Local => {
-                        if header.need_reply() {
-                            self.switch_to_wait_recv(&header);
-                        } else {
-                            self.end_transaction();
-                        }
-                    }
-                    // 상대가 보낸 primary message에 secondary로 응답한 상태
-                    // 트랜잭션이 종료됨
-                    TransactionOwner::Remote => {
-                        self.end_transaction();
-                    }
+                if header.is_primary() && header.need_reply() {
+                    self.switch_to_wait_recv(&header);
+                } else {
+                    self.end_transaction();
                 }
             }
         }
@@ -386,9 +376,7 @@ mod tests {
 
     /// primary + need recv 데이터를 요청받은 경우
     #[test]
-    fn test_recv_primary_need_reply() {
-
-    }
+    fn test_recv_primary_need_reply() {}
 
     #[test]
     fn test_send() {}

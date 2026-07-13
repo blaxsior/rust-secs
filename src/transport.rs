@@ -37,11 +37,18 @@ impl TransactionKey {
         }
     }
 
-    pub fn new(owner: TransactionOwner, system_bytes: SystemByte) -> Self {
-        Self {
-            owner,
-            system_byte: system_bytes,
-        }
+    pub fn new(owner: TransactionOwner, system_byte: SystemByte) -> Self {
+        Self { owner, system_byte }
+    }
+
+    pub fn from(role: ConnectionRole, rbit: Rbit, system_byte: SystemByte) -> Self {
+        let owner = match (role, rbit) {
+            (ConnectionRole::Active, Rbit(false)) => TransactionOwner::Local,
+            (ConnectionRole::Active, Rbit(true)) => TransactionOwner::Remote,
+            (ConnectionRole::Passive, Rbit(false)) => TransactionOwner::Remote,
+            (ConnectionRole::Passive, Rbit(true)) => TransactionOwner::Local,
+        };
+        Self::new(owner, system_byte)
     }
 }
 
@@ -88,41 +95,5 @@ impl Rbit {
     /// 보수 값을 반환
     pub const fn complement(self) -> Self {
         Self(!self.0)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MessageDirection {
-    /// Host -> Equipment (R = 0)
-    Forward,
-    /// Equipment -> Host (R = 1)
-    Reverse,
-}
-
-impl MessageDirection {
-    pub fn opposite(self) -> Self {
-        match self {
-            Self::Forward => Self::Reverse,
-            Self::Reverse => Self::Forward,
-        }
-    }
-}
-
-impl From<Rbit> for MessageDirection {
-    fn from(value: Rbit) -> Self {
-        if value.0 {
-            Self::Forward
-        } else {
-            Self::Reverse
-        }
-    }
-}
-
-impl From<MessageDirection> for Rbit {
-    fn from(value: MessageDirection) -> Self {
-        match value {
-            MessageDirection::Forward => Rbit(false),
-            MessageDirection::Reverse => Rbit(true),
-        }
     }
 }

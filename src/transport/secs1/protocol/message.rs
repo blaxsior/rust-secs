@@ -1,7 +1,5 @@
 use crate::core::SecsMessage;
 use crate::transport::DeviceId;
-use crate::transport::MessageDirection;
-use crate::transport::TransactionOwner;
 use crate::transport::secs1::convert::decode;
 use crate::transport::secs1::convert::encode;
 use crate::transport::secs1::protocol::message::tansaction_manager::Secs1TransactionManager;
@@ -137,17 +135,11 @@ impl Secs1MessageMachine {
 
     /// header로부터 transaction_key를 획득
     fn get_transaction_key(&self, header: &Secs1BlockHeader) -> TransactionKey {
-        let direction = header.direction();
+        let direction = header.rbit;
         let role = self.role;
+        let system_byte = header.system_byte;
 
-        let transaction_owner = match (role, direction) {
-            (ConnectionRole::Active, MessageDirection::Forward) => TransactionOwner::Local,
-            (ConnectionRole::Active, MessageDirection::Reverse) => TransactionOwner::Remote,
-            (ConnectionRole::Passive, MessageDirection::Forward) => TransactionOwner::Remote,
-            (ConnectionRole::Passive, MessageDirection::Reverse) => TransactionOwner::Local,
-        };
-
-        TransactionKey::new(transaction_owner, header.system_byte)
+        TransactionKey::from(role, direction, system_byte)
     }
 
     fn process_send(&mut self, msg: SecsMessage) {
@@ -157,12 +149,9 @@ impl Secs1MessageMachine {
 
         if function.is_primary() {
             let system_byte = self.generate_system_byte();
-            let transaction_key = 
+            
             // 요청 -> 트랜잭션을 새롭게 생성
-            TransactionKey {
-                owner: TransactionOwner::Local,
-                system_byte,
-            };
+            let transaction_key = TransactionKey::from(self.role, msg.rbit.into(), system_byte);
 
             let blocks = match encode(msg) {
                 Ok(it) => it,

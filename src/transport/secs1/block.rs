@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use secs_ii::{FunctionId, StreamId};
 
-use crate::transport::{DeviceId, MessageDirection, Rbit, SystemByte, error::SecsTransportError};
+use crate::transport::{DeviceId, Rbit, SystemByte, error::SecsTransportError};
 
 const WITHOUT_MSB: u8 = 0x7F;
 const MSB_ONLY: u8 = 0x80;
@@ -120,10 +120,6 @@ impl Secs1BlockHeader {
     /// 응답을 요구하는지 여부
     pub fn need_reply(&self) -> bool {
         self.wbit
-    }
-
-    pub fn direction(&self) -> MessageDirection {
-        self.rbit.into()
     }
 
     /// primary message인지 여부
