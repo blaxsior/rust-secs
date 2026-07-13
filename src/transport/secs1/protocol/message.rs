@@ -1,6 +1,5 @@
 use crate::core::SecsMessage;
 use crate::transport::DeviceId;
-use crate::transport::secs1::block;
 use crate::transport::secs1::convert::decode;
 use crate::transport::secs1::convert::encode;
 use crate::transport::secs1::protocol::message::transaction::Secs1TransactionEffect;

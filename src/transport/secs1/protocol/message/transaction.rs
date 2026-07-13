@@ -164,11 +164,16 @@ impl Secs1MessageTransaction {
             }
         }
 
+        // 상태 전이 수행
         if let Secs1TransactionState::WaitRecv = self.state {
             self.enter_recv();
         }
 
         self.state.recv_next(block);
+
+        if !self.state.is_recv_end() {
+            return;
+        }
 
         if let Secs1TransactionState::Recv { blocks } = &self.state {
             let block = match blocks.last() {
@@ -311,7 +316,7 @@ impl Secs1MessageTransaction {
     fn on_send(&mut self, header: &Secs1BlockHeader) {
         if let Secs1TransactionState::Send { blocks } = &self.state {
             // 블록이 비어 있는 경우
-            if blocks.is_empty() {
+            if self.state.is_send_end() {
                 log::debug!("message send success. owner = {:?}", self.id.owner);
                 self.emit_effect(Secs1TransactionEffect::SendComplete);
 
