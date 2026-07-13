@@ -210,7 +210,7 @@ impl Secs1MessageMachine {
                 }
             };
 
-            transaction.handle_reply(&transaction_key, blocks);
+            transaction.handle_reply(blocks);
             if let Some(block) = transaction.poll_send() {
                 self.write_block(block);
             }
@@ -256,19 +256,11 @@ impl Secs1MessageMachine {
                 Secs1TransactionEffect::ErrorOccured(error) => {
                     self.emit_event(Secs1MessageEvent::ErrorOccured(error));
                 }
-                Secs1TransactionEffect::RecvComplete(blocks) => match decode(blocks) {
-                    Ok(msg) => {
-                        self.outgoing_msgs.push_back(msg);
-                        self.emit_event(Secs1MessageEvent::RecvComplete {
-                            transaction_key: *transaction_key,
-                        });
-                    }
-                    Err(error) => {
-                        self.emit_event(Secs1MessageEvent::ErrorOccured(
-                            SecsTransportError::MessageConvertFailed(error),
-                        ));
-                    }
-                },
+                Secs1TransactionEffect::RecvComplete => {
+                    self.emit_event(Secs1MessageEvent::RecvComplete {
+                        transaction_key: *transaction_key,
+                    })
+                }
                 Secs1TransactionEffect::SendComplete => {
                     self.emit_event(Secs1MessageEvent::SendComplete {
                         transaction_key: *transaction_key,
