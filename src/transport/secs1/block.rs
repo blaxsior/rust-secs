@@ -42,6 +42,14 @@ impl Secs1Block {
 
         buf
     }
+
+    pub fn to_bytes_with_checksum(&self) -> Vec<u8> {
+        let mut bytes = self.to_bytes();
+        let checksum = self.checksum();
+
+        bytes.extend_from_slice(checksum.to_be_bytes().as_slice());
+        return bytes;
+    }
 }
 
 impl TryFrom<&[u8]> for Secs1Block {

@@ -287,7 +287,7 @@ impl Secs1BlockTransferMachine {
             // retry 횟수 초과 -> 상위에 timeout 발생 알리고 IDLE 복귀
             self.current_retry = 0; // retry 0으로 초기화(필수는 아니나, 오류 막기 위한 목적)
             self.state_change(Secs1BlockTransferState::IDLE);
-            let block = self.incoming_blocks.pop_front().expect("block must exists");
+            let block = self.pop_incoming_block();
             self.emit_event(Secs1BlockTransferEvent::SendFailed {
                 header: block.header,
                 error: SecsTransportError::Timeout(SecsTimeoutUnit::T2),
@@ -320,17 +320,20 @@ impl Secs1BlockTransferMachine {
         }
     }
 
+    fn pop_incoming_block(&mut self) -> Secs1Block {
+        self.incoming_blocks.pop_front().expect("block must exists")
+    }
+
     /// send -> ACK 대기 상태로 전환
     fn process_send_block(&mut self) {
-        let (mut bytes, checksum_bytes) = {
+        let bytes = {
             let block = self
                 .incoming_blocks
                 .front()
                 .expect("unexpected empty block queue when send");
-            (block.to_bytes(), block.checksum().to_be_bytes())
+            block.to_bytes_with_checksum()
         };
 
-        bytes.extend_from_slice(&checksum_bytes);
         self.write(bytes);
         self.start_timeout(SecsTimeoutUnit::T2);
         self.state_change(Secs1BlockTransferState::SEND(SendState::WaitForAck));
@@ -346,7 +349,7 @@ impl Secs1BlockTransferMachine {
                 && code == Secs1HandshakeCode::ACK
             {
                 // ACK 받음 -> 보낸 블록 제거 + IDLE로 전이
-                let block = self.incoming_blocks.pop_front().unwrap(); // ACK 받았으니 보낸 블록 제거
+                let block = self.pop_incoming_block();
                 self.emit_event(Secs1BlockTransferEvent::SendSuccess {
                     header: block.header,
                 });
@@ -382,12 +385,20 @@ impl Secs1BlockTransferMachine {
             // length byte를 수신한 경우
             self.cancel_timeout(SecsTimeoutUnit::T2);
             log::debug!("[{}] length byte received", self.state.name());
-            self.state_change(Secs1BlockTransferState::RECEIVE(
-                ReceiveState::WaitingData {
-                    length: byte,
-                    buffer: Vec::new(),
-                },
-            ));
+
+            let is_length_valid = byte >= 10 && byte <= 254;
+            if is_length_valid {
+                // 정상 length 수신한 경우 -> data 수신 모드로 전이
+                self.state_change(Secs1BlockTransferState::RECEIVE(
+                    ReceiveState::WaitingData {
+                        length: byte,
+                        buffer: Vec::new(),
+                    },
+                ));
+            } else {
+                // length가 비정상 -> 데이터 drop 모드로 전이
+                self.state_change(Secs1BlockTransferState::RECEIVE(ReceiveState::InvalidBlock));
+            }
             self.start_timeout(SecsTimeoutUnit::T1); // length byte 수신 후 data byte 수신 대기를 위한 T1 timer 시작
         }
     }
@@ -443,10 +454,6 @@ impl Secs1BlockTransferMachine {
                     }
                 }
             }
-        } else {
-            panic!(
-                "invalid state: process_waiting_data should only be called in WaitingData state"
-            );
         }
         self.start_timeout(SecsTimeoutUnit::T1); // 다음 데이터 대기(T1)
     }
@@ -584,6 +591,7 @@ impl Protocol<&[u8], Secs1Block, ()> for Secs1BlockTransferMachine {
                 self.completion_with_send_nak();
             }
 
+            // RECEIVE InvalidBlock 중 Timeout
             (Secs1BlockTransferState::RECEIVE(ReceiveState::InvalidBlock), SecsTimeoutUnit::T1) => {
                 self.emit_event(Secs1BlockTransferEvent::ReceiveFailed {
                     error: SecsTransportError::BlockError,
@@ -594,7 +602,8 @@ impl Protocol<&[u8], Secs1Block, ()> for Secs1BlockTransferMachine {
             // 상태와 타임아웃 유닛이 매칭되지 않으면 무시
             _ => {}
         }
-
+        // 상태 전이에 따른 작업 수행
+        self.run();
         Ok(())
     }
 
@@ -621,11 +630,14 @@ mod tests {
     use secs_ii::{FunctionId, StreamId};
 
     use crate::transport::{
-        ConnectionRole, DeviceId, Rbit, SystemByte,
+        ConnectionRole, DeviceId, Rbit, SecsTimeoutUnit, SystemByte,
         secs1::{
-            block::{Secs1Block, Secs1BlockHeader},
+            block::{Secs1Block, Secs1BlockHeader, Secs1HandshakeCode},
             config::Secs1TransportConfig,
-            protocol::block_transfer::Secs1BlockTransferMachine,
+            protocol::block_transfer::{
+                LineControlState, ReceiveState, Secs1BlockTransferMachine, Secs1BlockTransferState,
+                SendState,
+            },
         },
     };
 
@@ -637,7 +649,7 @@ mod tests {
             t2_timeout: Duration::from_millis(1000),
             t3_timeout: Duration::from_millis(1000),
             t4_timeout: Duration::from_millis(1000),
-            t2_rty_limit: 3,
+            t2_rty_limit: 2,
         }
     }
 
@@ -649,19 +661,13 @@ mod tests {
             t2_timeout: Duration::from_millis(1000),
             t3_timeout: Duration::from_millis(1000),
             t4_timeout: Duration::from_millis(1000),
-            t2_rty_limit: 3,
+            t2_rty_limit: 2,
         }
     }
 
-    #[test]
-    fn test_idle_to_line_control() {
-        let config = config_active();
-        // 1. 머신 초기화
-        let mut machine = Secs1BlockTransferMachine::new(&config);
-        assert_eq!(machine.state.name(), "IDLE");
-
+    fn message_block(device_id: DeviceId) -> Secs1Block {
         let header = Secs1BlockHeader {
-            device_id: config.device_id,
+            device_id: device_id,
             rbit: Rbit(false),
             wbit: true,
             stream: StreamId(1),
@@ -673,20 +679,427 @@ mod tests {
 
         let block = Secs1Block {
             header,
-            data: vec![0x00, 0x00],
+            data: vec![0x01, 0x01, 0xB1, 0x04, 0x00, 0x00, 0x0B, 0xB8],
         };
+
+        block
+    }
+
+    // IDLE -> LINE CONTROL 전이(send 아이템 존재하는 경우)
+    #[test]
+    fn test_idle_to_line_control() {
+        let config = config_active();
+        // 1. 머신 초기화
+        let mut machine = Secs1BlockTransferMachine::new(&config);
+        assert!(matches!(machine.state, Secs1BlockTransferState::IDLE));
+
+        let block = message_block(config.device_id);
 
         // 3. handle_write 호출 (내부적으로 incoming_blocks에 넣고 run() 호출)
         machine.handle_write(block).unwrap();
 
         // 4. 상태 전이 검증
-        // 기대하는 상태: LINECONTROL -> WaitRecv
-        assert_eq!(machine.state.name(), "LINECONTROL:WaitResp");
+        // 기대하는 상태: LINECONTROL -> WaitResp
+        assert!(matches!(
+            machine.state,
+            Secs1BlockTransferState::LINECONTROL(LineControlState::WaitForResponse)
+        ));
 
-        // 5. 추가 검증: outgoing_buffer에 ENQ가 들어갔는지 확인 (필요시)
+        // 5. 추가 검증: outgoing_buffer에 ENQ가 들어갔는지 확인
         // handle_line_control이 실행되면서 write(ENQ)가 호출되었을 것임
         let output = machine.poll_write();
         assert!(output.is_some());
-        assert_eq!(output.unwrap(), vec![0x05]); // 0x05는 일반적으로 ENQ 코드
+        assert_eq!(output.unwrap(), vec![Secs1HandshakeCode::ENQ.into()]);
+    }
+
+    // IDLE -> RECV 전이: nothing to send + ENQ recv
+    #[test]
+    fn test_idle_to_recv() {
+        let config = config_active();
+        // 1. 머신 초기화
+        let mut machine = Secs1BlockTransferMachine::new(&config);
+        assert!(matches!(machine.state, Secs1BlockTransferState::IDLE));
+
+        // 아이템이 없는 상태에서 ENQ 수신 -> RECV 전이
+        machine
+            .handle_read(&[Secs1HandshakeCode::ENQ.into()])
+            .unwrap();
+
+        assert!(matches!(
+            machine.state,
+            Secs1BlockTransferState::RECEIVE(ReceiveState::WaitingLength)
+        ));
+
+        // T2 timeout 발생
+        let ticket = machine.poll_timeout().unwrap();
+        assert!(matches!(ticket.timeout, SecsTimeoutUnit::T2));
+    }
+
+    // Active가 LINE CONTROL 시 EOT 받음 -> 양보 X
+    #[test]
+    fn test_line_control_active_recv_enq() {
+        let config = config_active();
+        // 1. 머신 초기화
+        let mut machine = Secs1BlockTransferMachine::new(&config);
+        machine.state = Secs1BlockTransferState::LINECONTROL(LineControlState::WaitForResponse);
+
+        machine
+            .handle_read(&[Secs1HandshakeCode::ENQ.into()])
+            .unwrap();
+
+        // active 모드의 경우 ENQ 받아도 전이 X 그냥 무시
+        assert!(matches!(
+            machine.state,
+            Secs1BlockTransferState::LINECONTROL(LineControlState::WaitForResponse)
+        ));
+    }
+
+    // Passive가 LINE CONTROL 시 EOT 받음 -> 양보, RECV 전이
+    #[test]
+    fn test_line_control_passive_recv_enq_then_move_to_recv() {
+        let config = config_passive();
+
+        let mut machine = Secs1BlockTransferMachine::new(&config);
+        machine.state = Secs1BlockTransferState::LINECONTROL(LineControlState::WaitForResponse);
+
+        machine
+            .handle_read(&[Secs1HandshakeCode::ENQ.into()])
+            .unwrap();
+
+        // length byte 대기 모드로 전이
+        assert!(matches!(
+            machine.state,
+            Secs1BlockTransferState::RECEIVE(ReceiveState::WaitingLength)
+        ));
+
+        // EOT 전송
+        let bytes = machine.poll_write();
+        assert!(bytes.is_some());
+        assert_eq!(bytes.unwrap(), vec![Secs1HandshakeCode::EOT.into()]);
+
+        // T2 timeout 시작
+        let timeout = machine.poll_timeout();
+        assert!(timeout.is_some());
+        assert_eq!(timeout.unwrap().timeout, SecsTimeoutUnit::T2);
+    }
+
+    // LINE CONTROL 중 retry 초과 -> IDLE 전이
+    #[test]
+    fn test_line_control_fail_send_move_to_idle() {
+        let config = config_active();
+        let mut machine = Secs1BlockTransferMachine::new(&config);
+        let block = message_block(config.device_id);
+        machine.handle_write(block).unwrap();
+
+        for rty in 0..(config.t2_rty_limit + 1) {
+            assert!(matches!(
+                machine.state,
+                Secs1BlockTransferState::LINECONTROL(LineControlState::WaitForResponse)
+            ));
+            assert_eq!(machine.current_retry, rty);
+            let output = machine.poll_write().expect("expect bytes but found None");
+            assert_eq!(output, vec![Secs1HandshakeCode::ENQ.into()]);
+            let ticket = machine
+                .poll_timeout()
+                .expect("expect timout but found None");
+            assert_eq!(ticket.timeout, SecsTimeoutUnit::T2);
+            machine.handle_timeout(ticket).unwrap();
+        }
+
+        // limit + 1 회의 timeout 발생, idle 모드로 복귀
+        assert_eq!(machine.current_retry, 0);
+        assert!(matches!(machine.state, Secs1BlockTransferState::IDLE));
+    }
+
+    // SEND mode ACK 수신 -> IDLE 전이
+    #[test]
+    fn test_send_success_move_to_idle() {
+        let config = config_active();
+        let mut machine = Secs1BlockTransferMachine::new(&config);
+        let block = message_block(config.device_id);
+
+        // send block -> line control
+        machine.handle_write(block).unwrap();
+        assert!(matches!(
+            machine.state,
+            Secs1BlockTransferState::LINECONTROL(LineControlState::WaitForResponse)
+        ));
+        let ticket = machine
+            .poll_timeout()
+            .expect("expect timout but found None");
+        assert_eq!(ticket.timeout, SecsTimeoutUnit::T2);
+
+        // recv EOT -> move to send
+        machine
+            .handle_read(&[Secs1HandshakeCode::EOT.into()])
+            .unwrap();
+        assert!(matches!(
+            machine.state,
+            Secs1BlockTransferState::SEND(SendState::WaitForAck)
+        ));
+        let bytes = machine.poll_write().expect("expect block bytes but None");
+        assert!(bytes.len() > 0);
+        let ticket = machine
+            .poll_timeout()
+            .expect("expect timout but found None");
+        assert_eq!(ticket.timeout, SecsTimeoutUnit::T2);
+
+        // recv ack after send -> move to idle
+        machine
+            .handle_read(&[Secs1HandshakeCode::ACK.into()])
+            .unwrap();
+        assert!(matches!(machine.state, Secs1BlockTransferState::IDLE));
+        // return to idle
+    }
+
+    // SEND mode NAK 수신 -> LINE CONTROL 전이
+    #[test]
+    fn test_send_fail_with_nak_move_to_line_control() {
+        let config = config_active();
+        let mut machine = Secs1BlockTransferMachine::new(&config);
+        let block = message_block(config.device_id);
+
+        // send block -> line control
+        machine.handle_write(block).unwrap();
+        assert!(matches!(
+            machine.state,
+            Secs1BlockTransferState::LINECONTROL(LineControlState::WaitForResponse)
+        ));
+        let ticket = machine
+            .poll_timeout()
+            .expect("expect timout but found None");
+        assert_eq!(ticket.timeout, SecsTimeoutUnit::T2);
+
+        // recv EOT -> move to send
+        machine
+            .handle_read(&[Secs1HandshakeCode::EOT.into()])
+            .unwrap();
+        assert!(matches!(
+            machine.state,
+            Secs1BlockTransferState::SEND(SendState::WaitForAck)
+        ));
+        let bytes = machine.poll_write().expect("expect block bytes but None");
+        assert!(bytes.len() > 0);
+        let ticket = machine
+            .poll_timeout()
+            .expect("expect timout but found None");
+        assert_eq!(ticket.timeout, SecsTimeoutUnit::T2);
+
+        // recv nak after send -> move to line control
+        machine
+            .handle_read(&[Secs1HandshakeCode::NAK.into()])
+            .unwrap();
+        assert!(matches!(
+            machine.state,
+            Secs1BlockTransferState::LINECONTROL(LineControlState::WaitForResponse)
+        ));
+        assert_eq!(machine.current_retry, 1);
+        // return to idle
+    }
+
+    // SEND mode t2 timeout 발생 -> LINE CONTROL 전이
+    #[test]
+    fn test_send_fail_with_t2_timeout_move_to_line_control() {
+        let config = config_active();
+        let mut machine = Secs1BlockTransferMachine::new(&config);
+        let block = message_block(config.device_id);
+
+        // send block -> line control
+        machine.handle_write(block).unwrap();
+        assert!(matches!(
+            machine.state,
+            Secs1BlockTransferState::LINECONTROL(LineControlState::WaitForResponse)
+        ));
+        let ticket = machine
+            .poll_timeout()
+            .expect("expect timout but found None");
+        assert_eq!(ticket.timeout, SecsTimeoutUnit::T2);
+
+        // recv EOT -> move to send
+        machine
+            .handle_read(&[Secs1HandshakeCode::EOT.into()])
+            .unwrap();
+        assert!(matches!(
+            machine.state,
+            Secs1BlockTransferState::SEND(SendState::WaitForAck)
+        ));
+        let bytes = machine.poll_write().expect("expect block bytes but None");
+        assert!(bytes.len() > 0);
+        let ticket = machine
+            .poll_timeout()
+            .expect("expect timout but found None");
+        assert_eq!(ticket.timeout, SecsTimeoutUnit::T2);
+
+        // timeout 발생
+        machine.handle_timeout(ticket).unwrap();
+        // line control 재진입
+        assert!(matches!(
+            machine.state,
+            Secs1BlockTransferState::LINECONTROL(LineControlState::WaitForResponse)
+        ));
+        assert_eq!(machine.current_retry, 1);
+        // return to idle
+    }
+
+    // recv - wait length 중 timeout 발생한 경우 -> move to Idle / send NAK
+    #[test]
+    fn test_recv_t2_timeout_then_send_nak_move_to_idle() {
+        let config = config_passive();
+
+        let mut machine = Secs1BlockTransferMachine::new(&config);
+        machine.state = Secs1BlockTransferState::LINECONTROL(LineControlState::WaitForResponse);
+
+        machine
+            .handle_read(&[Secs1HandshakeCode::ENQ.into()])
+            .unwrap();
+
+        // length byte 대기 모드로 전이
+        assert!(matches!(
+            machine.state,
+            Secs1BlockTransferState::RECEIVE(ReceiveState::WaitingLength)
+        ));
+
+        // EOT 전송
+        let bytes = machine.poll_write().unwrap();
+        assert_eq!(bytes, vec![Secs1HandshakeCode::EOT.into()]);
+
+        // T2 timeout 시작
+        let ticket = machine.poll_timeout().unwrap();
+        assert_eq!(ticket.timeout, SecsTimeoutUnit::T2);
+
+        // T2 timeout 발생
+        machine.handle_timeout(ticket).unwrap();
+
+        // NAK 전송
+        let bytes = machine.poll_write().unwrap();
+        assert_eq!(bytes, vec![Secs1HandshakeCode::NAK.into()]);
+
+        // IDLE 전이
+        assert!(matches!(machine.state, Secs1BlockTransferState::IDLE));
+    }
+
+    // length byte 수신했으나 잘못된 byte인 경우
+    #[test]
+    fn test_recv_invalid_length_then_move_to_recv_invalidblock() {
+        let config = config_passive();
+
+        let mut machine = Secs1BlockTransferMachine::new(&config);
+        machine.state = Secs1BlockTransferState::LINECONTROL(LineControlState::WaitForResponse);
+
+        machine
+            .handle_read(&[Secs1HandshakeCode::ENQ.into()])
+            .unwrap();
+
+        // length byte 대기 모드로 전이
+        assert!(matches!(
+            machine.state,
+            Secs1BlockTransferState::RECEIVE(ReceiveState::WaitingLength)
+        ));
+
+        // EOT 전송
+        let bytes = machine.poll_write().unwrap();
+        assert_eq!(bytes, vec![Secs1HandshakeCode::EOT.into()]);
+
+        // T2 timeout 시작
+        let ticket = machine.poll_timeout().unwrap();
+        assert_eq!(ticket.timeout, SecsTimeoutUnit::T2);
+
+        // 10 <= length <= 254 -> 잘못된 length byte가 들어온 경우
+        machine.handle_read(&[255]).unwrap();
+
+        // invalid block mode 전이
+        assert!(matches!(
+            machine.state,
+            Secs1BlockTransferState::RECEIVE(ReceiveState::InvalidBlock)
+        ));
+
+        // t1 timeout 시작
+        let ticket = machine.poll_timeout().unwrap();
+        assert_eq!(ticket.timeout, SecsTimeoutUnit::T1);
+    }
+
+    // invalid block 상태인 경우 입력되는 데이터를 계속 버리다가 T1 timeout 발생 시 nak 전송하고 idle 전이
+    #[test]
+    fn test_recv_invalid_block_discard_blocks_and_move_to_idle_with_nak() {
+        let config = config_passive();
+
+        let mut machine = Secs1BlockTransferMachine::new(&config);
+        machine.state = Secs1BlockTransferState::RECEIVE(ReceiveState::InvalidBlock);
+
+        machine.handle_read(&[0x00, 0x00]).unwrap();
+
+        // T1 timeout 시작
+        let ticket = machine.poll_timeout().unwrap();
+        assert_eq!(ticket.timeout, SecsTimeoutUnit::T1);
+
+        // T1 timeout 발생
+        machine.handle_timeout(ticket).unwrap();
+
+        // NAK 전송
+        let bytes = machine.poll_write().unwrap();
+        assert_eq!(bytes, vec![Secs1HandshakeCode::NAK.into()]);
+
+        // IDLE 전이
+        assert!(matches!(machine.state, Secs1BlockTransferState::IDLE));
+    }
+
+    // data 수신 중 t1 timeout 이 발생한 경우 NAK 전송
+    #[test]
+    fn test_recv_data_t1_timeout_then_move_to_idle_with_nak() {
+        let config = config_passive();
+
+        let mut machine = Secs1BlockTransferMachine::new(&config);
+        machine.state = Secs1BlockTransferState::RECEIVE(ReceiveState::WaitingData {
+            length: 2,
+            buffer: Vec::new(),
+        });
+        // 첫 byte 받음
+        machine.handle_read(&[0x00]).unwrap();
+
+        // T1 timeout 시작
+        let ticket = machine.poll_timeout().unwrap();
+        assert_eq!(ticket.timeout, SecsTimeoutUnit::T1);
+
+        // T1 timeout 발생
+        machine.handle_timeout(ticket).unwrap();
+
+        // NAK 전송
+        let bytes = machine.poll_write().unwrap();
+        assert_eq!(bytes, vec![Secs1HandshakeCode::NAK.into()]);
+
+        // IDLE 전이
+        assert!(matches!(machine.state, Secs1BlockTransferState::IDLE));
+    }
+
+    // 정상적으로 block 송신한 경우 ack 전송 & idle 전이
+    #[test]
+    fn test_recv_success_recv_then_move_idle_with_ack() {
+        let config = config_passive();
+
+        let mut machine = Secs1BlockTransferMachine::new(&config);
+        // header 10 + data 8 => 18
+        machine.state = Secs1BlockTransferState::RECEIVE(ReceiveState::WaitingData {
+            length: 18,
+            buffer: Vec::new(),
+        });
+
+        let expected = message_block(config.device_id);
+        let bytes = expected.to_bytes_with_checksum();
+        //secs block 읽기
+
+        machine.handle_read(&bytes).unwrap();
+
+        println!("state = {}", machine.state.name());
+
+        // ACK 전송
+        let bytes = machine.poll_write().unwrap();
+        assert_eq!(bytes, vec![Secs1HandshakeCode::ACK.into()]);
+
+        // IDLE 전이
+        assert!(matches!(machine.state, Secs1BlockTransferState::IDLE));
+
+        let block = machine.poll_read().unwrap();
+        assert_eq!(block.data, expected.data);
+        assert_eq!(block.header, expected.header);
     }
 }

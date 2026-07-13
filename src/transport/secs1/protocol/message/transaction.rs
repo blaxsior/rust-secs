@@ -382,7 +382,7 @@ impl Secs1MessageTransaction {
 
 #[cfg(test)]
 mod tests {
-    use secs_ii::{FunctionId, StreamId, item::Secs2Variant};
+    // use secs_ii::{FunctionId, StreamId, item::Secs2Variant};
 
     /// primary + need recv 데이터를 요청받은 경우
     #[test]
