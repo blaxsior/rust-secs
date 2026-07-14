@@ -1,12 +1,12 @@
 ﻿use crate::core::SecsMessage;
-use crate::transport::DeviceId;
 use crate::transport::secs1::protocol::message::transaction::{
     Secs1MessageTransaction, Secs1TransactionEffect,
 };
 use crate::transport::secs1::protocol::message::transaction_manager::Secs1TransactionManager;
+use crate::transport::{DeviceId, TransactionOwner};
 use crate::{
     transport::{
-        ConnectionRole, SecsTimeoutUnit, SystemByte, TransactionKey,
+        ConnectionRole, SecsTimeoutUnit, TransactionKey,
         error::SecsTransportError,
         secs1::{
             block::{Secs1Block, Secs1BlockHeader},
@@ -38,9 +38,17 @@ pub enum Secs1MessageSignal {
 /// secs-i message protocol 수행 중 발생하는 이벤트
 pub enum Secs1MessageEvent {
     /// 메시지를 성공적으로 송신
-    SendComplete { transaction_key: TransactionKey },
+    SendComplete {
+        transaction_key: TransactionKey,
+    },
     /// 메시지를 성공적으로 수신
-    RecvComplete { transaction_key: TransactionKey },
+    RecvComplete {
+        transaction_key: TransactionKey,
+    },
+
+    TransactionEnd {
+        transaction_key: TransactionKey,
+    },
 
     /// 메시지 송수신 중 타임아웃 발생
     MessageTimeout {
@@ -71,9 +79,6 @@ pub struct Secs1MessageMachine {
 
     /// 연결 모드 -> active or passive
     role: ConnectionRole,
-
-    /// 다음에 사용할 트랜잭션 ID (source 주도 기준)
-    next_system_byte: SystemByte,
     /// 트랜잭션 관리 구조체
     transaction_manager: Secs1TransactionManager,
 }
@@ -93,7 +98,6 @@ impl Secs1MessageMachine {
             device_id: config.device_id,
             reply_map: BTreeMap::new(),
             role: config.local_role,
-            next_system_byte: SystemByte(0),
             transaction_manager: Secs1TransactionManager::new(),
         }
     }
@@ -118,13 +122,6 @@ impl Secs1MessageMachine {
         self.outgoing_blocks.push_back(block);
     }
 
-    /// SystemByte를 만든다
-    fn generate_system_byte(&mut self) -> SystemByte {
-        let current = self.next_system_byte;
-        self.next_system_byte = current.next();
-        return current;
-    }
-
     fn take_reply_transaction_key(
         &mut self,
         stream: StreamId,
@@ -135,17 +132,22 @@ impl Secs1MessageMachine {
 
     /// header로부터 transaction_key를 획득
     fn get_transaction_key(&self, header: &Secs1BlockHeader) -> TransactionKey {
-        let direction = header.rbit;
         let role = self.role;
+        let is_primary = header.function.is_primary();
+        let rbit = header.rbit;
         let system_byte = header.system_byte;
 
-        TransactionKey::from(role, direction, system_byte)
+        TransactionKey::from(role, is_primary, rbit, system_byte)
     }
 
     /// transaction이 만든 출력물을 한 번에 꺼낸다.
     fn take_transaction_outputs(
         transaction: &mut Secs1MessageTransaction,
-    ) -> (Vec<SecsMessage>, Vec<Secs1Block>, Vec<Secs1TransactionEffect>) {
+    ) -> (
+        Vec<SecsMessage>,
+        Vec<Secs1Block>,
+        Vec<Secs1TransactionEffect>,
+    ) {
         let mut reads = Vec::new();
         while let Some(msg) = transaction.poll_read() {
             reads.push(msg);
@@ -166,7 +168,11 @@ impl Secs1MessageMachine {
     /// transaction 출력물을 엔진 큐에 반영한다.
     fn handle_transaction_outputs(
         &mut self,
-        outputs: (Vec<SecsMessage>, Vec<Secs1Block>, Vec<Secs1TransactionEffect>),
+        outputs: (
+            Vec<SecsMessage>,
+            Vec<Secs1Block>,
+            Vec<Secs1TransactionEffect>,
+        ),
         transaction_key: &TransactionKey,
     ) {
         let (reads, writes, effects) = outputs;
@@ -186,12 +192,11 @@ impl Secs1MessageMachine {
         // 1.  SxFy, y&1 == 0인 경우 -> 기존 프로세스 참조
         let stream = msg.payload.stream;
         let function = msg.payload.function;
+        let system_byte = msg.system_byte;
 
         if function.is_primary() {
-            let system_byte = self.generate_system_byte();
-
             // 요청 -> 트랜잭션을 새롭게 생성
-            let transaction_key = TransactionKey::from(self.role, msg.rbit.into(), system_byte);
+            let transaction_key = TransactionKey::new(TransactionOwner::Local, system_byte);
 
             let transaction = match self.transaction_manager.create_send(&transaction_key, msg) {
                 Some(t) => t,
@@ -227,7 +232,7 @@ impl Secs1MessageMachine {
             };
 
             transaction.handle_write(msg).unwrap();
-            
+
             let outputs = Self::take_transaction_outputs(transaction);
             self.handle_transaction_outputs(outputs, &transaction_key);
         }
@@ -410,13 +415,9 @@ mod tests {
 
     use crate::{
         core::SecsMessage,
-        transport::error::SecsTransportError,
         transport::{
-            DeviceId, Rbit, SecsTimeoutUnit, SystemByte,
-            secs1::{
-                config::Secs1TransportConfig,
-                protocol::message::transaction::Secs1TransactionEffect,
-            },
+            ConnectionRole, DeviceId, Rbit, SystemByte, TransactionKey, TransactionOwner,
+            secs1::{config::Secs1TransportConfig, convert::encode},
         },
     };
     use core::time::Duration;
@@ -436,48 +437,230 @@ mod tests {
         SecsMessage::new(device_id, system_byte, rbit, payload)
     }
 
-    #[test]
-    fn test_process_timeout_emits_message_timeout_event() {
+    fn build_secondary_message(
+        device_id: DeviceId,
+        system_byte: SystemByte,
+        rbit: Rbit,
+        need_reply: bool,
+    ) -> SecsMessage {
+        let stream = StreamId(1);
+        let function = FunctionId(4);
+        let body = Secs2Variant::list(vec![Secs2Variant::uint8(1500), Secs2Variant::uint8(1501)]);
+        let payload = Secs2Message::new(stream, function, need_reply, body);
+        SecsMessage::new(device_id, system_byte, rbit, payload)
+    }
+
+    fn build_machine() -> Secs1MessageMachine {
         let config = Secs1TransportConfig {
             device_id: DeviceId(10),
-            local_role: crate::transport::ConnectionRole::Active,
+            local_role: ConnectionRole::Active,
             t1_timeout: Duration::from_millis(100),
             t2_timeout: Duration::from_millis(100),
             t3_timeout: Duration::from_millis(100),
             t4_timeout: Duration::from_millis(100),
             t2_rty_limit: 3,
         };
-        let mut machine = Secs1MessageMachine::new(&config);
-        let system_byte = SystemByte(101);
-        let msg = build_primary_message(DeviceId(10), system_byte, Rbit::FORWARD, true);
+        Secs1MessageMachine::new(&config)
+    }
 
-        machine.handle_write(msg).unwrap();
-        let block = machine.poll_write().unwrap();
-        let expected_key = machine.get_transaction_key(&block.header);
-        machine.handle_effects(
-            vec![
-                Secs1TransactionEffect::ErrorOccured(SecsTransportError::Timeout(
-                    SecsTimeoutUnit::T3(expected_key),
-                )),
-                Secs1TransactionEffect::TransactionEnd,
-            ],
-            &expected_key,
-        );
-
+    fn drain_events(machine: &mut Secs1MessageMachine) -> Vec<Secs1MessageEvent> {
         let mut events = Vec::new();
         while let Some(event) = machine.poll_event() {
             events.push(event);
         }
+        events
+    }
 
+    fn drain_messages(machine: &mut Secs1MessageMachine) -> Vec<SecsMessage> {
+        let mut messages = Vec::new();
+        while let Some(msg) = machine.poll_read() {
+            messages.push(msg);
+        }
+        messages
+    }
+
+    fn drain_blocks(machine: &mut Secs1MessageMachine) -> Vec<Secs1Block> {
+        let mut blocks = Vec::new();
+        while let Some(block) = machine.poll_write() {
+            blocks.push(block);
+        }
+        blocks
+    }
+
+    #[test]
+    fn test_active_send_primary_need_reply() {
+        let mut machine = build_machine();
+        let device_id = machine.device_id;
+        let system_byte = SystemByte(101);
+        let msg = build_primary_message(device_id, system_byte, Rbit::FORWARD, true);
+        let expected_key = TransactionKey::new(TransactionOwner::Local, system_byte);
+
+        machine.handle_write(msg).unwrap();
+
+        let mut blocks = drain_blocks(&mut machine);
+        assert_eq!(blocks.len(), 1);
+        let block = blocks.remove(0);
+
+        machine
+            .handle_event(Secs1MessageSignal::BlockSendSuccess {
+                header: block.header,
+            })
+            .unwrap();
+
+        let events = drain_events(&mut machine);
         assert!(events.iter().any(|event| {
             matches!(
                 event,
-                Secs1MessageEvent::MessageTimeout {
-                    transaction_key,
-                    timeout_unit
-                } if *transaction_key == expected_key && *timeout_unit == SecsTimeoutUnit::T3(expected_key)
+                Secs1MessageEvent::SendComplete {
+                    transaction_key
+                } if *transaction_key == expected_key
             )
         }));
-        assert!(machine.transaction_manager.find(&expected_key).is_none());
+        assert_eq!(
+            machine.poll_timeout().map(|ticket| ticket.timeout),
+            Some(SecsTimeoutUnit::T3(expected_key))
+        );
+
+        let reply = build_secondary_message(device_id, system_byte, Rbit::REVERSE, false);
+        let reply_block = encode(reply).unwrap().into_iter().next().unwrap();
+
+        machine.handle_read(reply_block).unwrap();
+
+        let messages = drain_messages(&mut machine);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].system_byte, system_byte);
+
+        let events = drain_events(&mut machine);
+        assert!(events.iter().any(|event| {
+            matches!(
+                event,
+                Secs1MessageEvent::RecvComplete {
+                    transaction_key
+                } if *transaction_key == expected_key
+            )
+        }));
+        assert!(machine.poll_timeout().is_none());
+    }
+
+    #[test]
+    fn test_active_send_primary_no_reply() {
+        let mut machine = build_machine();
+        let device_id = machine.device_id;
+        let system_byte = SystemByte(102);
+        let msg = build_primary_message(device_id, system_byte, Rbit::FORWARD, false);
+        let expected_key = TransactionKey::new(TransactionOwner::Local, system_byte);
+
+        machine.handle_write(msg).unwrap();
+        let mut blocks = drain_blocks(&mut machine);
+        assert_eq!(blocks.len(), 1);
+        let block = blocks.remove(0);
+
+        machine
+            .handle_event(Secs1MessageSignal::BlockSendSuccess {
+                header: block.header,
+            })
+            .unwrap();
+
+        let events = drain_events(&mut machine);
+        assert!(events.iter().any(|event| {
+            matches!(
+                event,
+                Secs1MessageEvent::SendComplete {
+                    transaction_key
+                } if *transaction_key == expected_key
+            )
+        }));
+        assert!(machine.poll_timeout().is_none());
+    }
+
+    #[test]
+    fn test_active_send_primary_timeout_t3() {
+        let mut machine = build_machine();
+        let device_id = machine.device_id;
+        let system_byte = SystemByte(103);
+        let msg = build_primary_message(device_id, system_byte, Rbit::FORWARD, true);
+        let expected_key = TransactionKey::new(TransactionOwner::Local, system_byte);
+
+        machine.handle_write(msg).unwrap();
+        let mut blocks = drain_blocks(&mut machine);
+        let block = blocks.remove(0);
+        machine
+            .handle_event(Secs1MessageSignal::BlockSendSuccess {
+                header: block.header,
+            })
+            .unwrap();
+
+        let timeout = machine.poll_timeout().unwrap();
+        assert!(matches!(
+            timeout,
+            TimeoutTicket {
+                timeout: SecsTimeoutUnit::T3(TransactionKey { .. }),
+                ..
+            }
+        ));
+        
+        let events = drain_events(&mut machine);
+        assert!(!events.is_empty());
+        assert!(events.iter().any(|event| matches!(
+            event,
+            Secs1MessageEvent::SendComplete {
+                transaction_key
+            } if *transaction_key == expected_key
+        )));
+
+        // timeout 처리
+        machine.handle_timeout(timeout).unwrap();
+        let events = drain_events(&mut machine);
+
+        // timeout 발생했다고 알림
+        assert!(events.iter().any(|it| matches!(
+            it,
+            Secs1MessageEvent::MessageTimeout {
+                transaction_key,
+                timeout_unit: SecsTimeoutUnit::T3(_)
+            } if *transaction_key == expected_key
+        )));
+    }
+
+    #[test]
+    fn test_active_recv_primary_need_reply() {
+        let mut machine = build_machine();
+        let device_id = machine.device_id;
+        let system_byte = SystemByte(202);
+        let primary = build_primary_message(device_id, system_byte, Rbit::REVERSE, true);
+        let recv_block = encode(primary).unwrap().into_iter().next().unwrap();
+        let expected_key = TransactionKey::new(TransactionOwner::Remote, system_byte);
+
+        machine.handle_read(recv_block).unwrap();
+        let _ = drain_messages(&mut machine);
+        let events = drain_events(&mut machine);
+        assert!(!events.is_empty());
+        assert!(events.iter().any(|event| matches!(
+            event,
+            Secs1MessageEvent::RecvComplete {
+                transaction_key
+            } if *transaction_key == expected_key
+        )));
+        assert!(machine.poll_timeout().is_none());
+
+        let reply = build_secondary_message(device_id, system_byte, Rbit::FORWARD, false);
+        machine.handle_write(reply).unwrap();
+
+        let mut blocks = drain_blocks(&mut machine);
+        assert_eq!(blocks.len(), 1);
+        let block = blocks.remove(0);
+        machine
+            .handle_event(Secs1MessageSignal::BlockSendSuccess {
+                header: block.header,
+            })
+            .unwrap();
+        let events = drain_events(&mut machine);
+        assert!(events.iter().any(|it| matches!(
+            it,
+            Secs1MessageEvent::SendComplete {
+                transaction_key
+            } if *transaction_key == expected_key
+        )));
+        assert!(machine.poll_timeout().is_none());
     }
 }

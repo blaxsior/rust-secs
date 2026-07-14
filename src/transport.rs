@@ -41,13 +41,21 @@ impl TransactionKey {
         Self { owner, system_byte }
     }
 
-    pub fn from(role: ConnectionRole, rbit: Rbit, system_byte: SystemByte) -> Self {
-        let owner = match (role, rbit) {
-            (ConnectionRole::Active, Rbit(false)) => TransactionOwner::Local,
-            (ConnectionRole::Active, Rbit(true)) => TransactionOwner::Remote,
-            (ConnectionRole::Passive, Rbit(false)) => TransactionOwner::Remote,
-            (ConnectionRole::Passive, Rbit(true)) => TransactionOwner::Local,
+    pub fn from(role: ConnectionRole, is_primary: bool, rbit: Rbit, system_byte: SystemByte) -> Self {
+        // local이 만들었다의 기준
+        // active가 보내는 측인데 primary
+        // active가 받는 측인데 secondary
+        // passive가 보내는 측인데 secondary
+        // passive가 받는 측인데 primary
+
+        let owner = match (role, is_primary, rbit) {
+            (ConnectionRole::Active, true, Rbit::FORWARD) => TransactionOwner::Local,
+            (ConnectionRole::Active, false, Rbit::REVERSE) => TransactionOwner::Local,
+            (ConnectionRole::Passive, true, Rbit::REVERSE) => TransactionOwner::Local,
+            (ConnectionRole::Passive, false, Rbit::FORWARD) => TransactionOwner::Local,
+            _ => TransactionOwner::Remote,
         };
+
         Self::new(owner, system_byte)
     }
 }
