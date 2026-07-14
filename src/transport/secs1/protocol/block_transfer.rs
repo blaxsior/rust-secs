@@ -234,43 +234,40 @@ impl Secs1BlockTransferMachine {
 
     /// line control state를 처리한다.
     pub fn handle_line_control(&mut self) {
-        if let Secs1BlockTransferState::LINECONTROL(line_control_state) = &self.state {
-            match line_control_state {
-                LineControlState::BeforeSendENQ => {
-                    log::debug!("[{}] send ENQ, switch to recv", self.state.name());
-                    self.write(self.codebytes(Secs1HandshakeCode::ENQ));
-                    self.start_timeout(SecsTimeoutUnit::T2); // ENQ 송신 후 응답 대기를 위한 T2 timer 시작
-                    self.state_change(Secs1BlockTransferState::LINECONTROL(
-                        LineControlState::WaitForResponse,
-                    ));
-                }
-                LineControlState::WaitForResponse => {
-                    // ENQ 송신 후 상대방의 응답을 기다리는 상태 -> handle_idle과 유사하게 ENQ, EOT 수신 시 처리
-                    while let Some(byte) = self.incoming_buffer.pop_front() {
-                        if let Ok(code) = Secs1HandshakeCode::try_from(byte) {
-                            if self.mode == ConnectionRole::Passive
-                                && code == Secs1HandshakeCode::ENQ
-                            {
-                                log::debug!(
-                                    "[{}] passive + ENQ, switch to RECV",
-                                    self.state.name()
-                                );
-                                // 나는 passive인데 상대에게 ENQ 받음 -> 양보하고 RECEIVE 모드로 전이
-                                self.switch_to_receive();
-                                return;
-                            } else if code == Secs1HandshakeCode::EOT {
-                                // EOT를 정상적으로 받아 SEND 모드로 전이
-                                log::debug!("[{}] active + EOT, switch to SEND", self.state.name());
-                                self.switch_to_send();
-                                return;
-                            }
-                            // 이외 데이터는 버리고, 계속 반복 진행
-                        }
+        let Secs1BlockTransferState::LINECONTROL(line_control_state) = &self.state else {
+            panic!("invalid state: handle_line_control should only be called in LINECONTROL state");
+        };
+
+        match line_control_state {
+            LineControlState::BeforeSendENQ => {
+                log::debug!("[{}] send ENQ, switch to recv", self.state.name());
+                self.write(self.codebytes(Secs1HandshakeCode::ENQ));
+                self.start_timeout(SecsTimeoutUnit::T2); // ENQ 송신 후 응답 대기를 위한 T2 timer 시작
+                self.state_change(Secs1BlockTransferState::LINECONTROL(
+                    LineControlState::WaitForResponse,
+                ));
+            }
+            LineControlState::WaitForResponse => {
+                // ENQ 송신 후 상대방의 응답을 기다리는 상태 -> handle_idle과 유사하게 ENQ, EOT 수신 시 처리
+                while let Some(byte) = self.incoming_buffer.pop_front() {
+                    let Ok(code) = Secs1HandshakeCode::try_from(byte) else {
+                        continue;
+                    };
+
+                    if self.mode == ConnectionRole::Passive && code == Secs1HandshakeCode::ENQ {
+                        log::debug!("[{}] passive + ENQ, switch to RECV", self.state.name());
+                        // 나는 passive인데 상대에게 ENQ 받음 -> 양보하고 RECEIVE 모드로 전이
+                        self.switch_to_receive();
+                        return;
+                    } else if code == Secs1HandshakeCode::EOT {
+                        // EOT를 정상적으로 받아 SEND 모드로 전이
+                        log::debug!("[{}] active + EOT, switch to SEND", self.state.name());
+                        self.switch_to_send();
+                        return;
                     }
+                    // 이외 데이터는 버리고, 계속 반복 진행
                 }
             }
-        } else {
-            panic!("invalid state: handle_line_control should only be called in LINECONTROL state");
         }
 
         // 현재 들어온 데이터에 대한 작업 처리 수행
@@ -310,13 +307,13 @@ impl Secs1BlockTransferMachine {
 
     /// send state를 처리한다.
     pub fn handle_send(&mut self) {
-        if let Secs1BlockTransferState::SEND(send_state) = &self.state {
-            match send_state {
-                SendState::BeforeSend => self.process_send_block(),
-                SendState::WaitForAck => self.process_wait_for_ack(),
-            }
-        } else {
+        let Secs1BlockTransferState::SEND(send_state) = &self.state else {
             panic!("invalid state: handle_send should only be called in SEND state");
+        };
+
+        match send_state {
+            SendState::BeforeSend => self.process_send_block(),
+            SendState::WaitForAck => self.process_wait_for_ack(),
         }
     }
 
@@ -341,25 +338,27 @@ impl Secs1BlockTransferMachine {
 
     /// 데이터 보낸 후 응답 올 때까지 대기
     fn process_wait_for_ack(&mut self) {
-        if let Some(byte) = self.incoming_buffer.pop_front() {
-            // 일단 timeout을 받았음 -> cancel
-            self.cancel_timeout(SecsTimeoutUnit::T2);
+        let Some(byte) = self.incoming_buffer.pop_front() else {
+            return;
+        };
 
-            if let Ok(code) = Secs1HandshakeCode::try_from(byte)
-                && code == Secs1HandshakeCode::ACK
-            {
-                // ACK 받음 -> 보낸 블록 제거 + IDLE로 전이
-                let block = self.pop_incoming_block();
-                self.emit_event(Secs1BlockTransferEvent::SendSuccess {
-                    header: block.header,
-                });
-                self.state_change(Secs1BlockTransferState::IDLE); // ACK 수신 -> IDLE로 전이
-                // BLOCK SENT 상태
-                return;
-            } else {
-                // ACK 아닌 신호 -> 재전송 로직 진입
-                self.retrigger_line_control();
-            }
+        // 일단 timeout을 받았음 -> cancel
+        self.cancel_timeout(SecsTimeoutUnit::T2);
+
+        if let Ok(code) = Secs1HandshakeCode::try_from(byte)
+            && code == Secs1HandshakeCode::ACK
+        {
+            // ACK 받음 -> 보낸 블록 제거 + IDLE로 전이
+            let block = self.pop_incoming_block();
+            self.emit_event(Secs1BlockTransferEvent::SendSuccess {
+                header: block.header,
+            });
+            self.state_change(Secs1BlockTransferState::IDLE); // ACK 수신 -> IDLE로 전이
+            // BLOCK SENT 상태
+            return;
+        } else {
+            // ACK 아닌 신호 -> 재전송 로직 진입
+            self.retrigger_line_control();
         }
     }
 
@@ -370,37 +369,40 @@ impl Secs1BlockTransferMachine {
 
     /// receive state를 처리한다.
     pub fn handle_receive(&mut self) {
-        if let Secs1BlockTransferState::RECEIVE(receive_state) = &self.state {
-            match receive_state {
-                ReceiveState::WaitingLength => self.process_waiting_length(),
-                ReceiveState::WaitingData { .. } => self.process_waiting_data(),
-                ReceiveState::InvalidBlock => self.process_invalid_block(),
-            }
+        let Secs1BlockTransferState::RECEIVE(receive_state) = &self.state else {
+            return;
+        };
+
+        match receive_state {
+            ReceiveState::WaitingLength => self.process_waiting_length(),
+            ReceiveState::WaitingData { .. } => self.process_waiting_data(),
+            ReceiveState::InvalidBlock => self.process_invalid_block(),
         }
     }
 
     /// length byte를 수신한다.
     fn process_waiting_length(&mut self) {
-        if let Some(byte) = self.incoming_buffer.pop_front() {
-            // length byte를 수신한 경우
-            self.cancel_timeout(SecsTimeoutUnit::T2);
-            log::debug!("[{}] length byte received", self.state.name());
+        let Some(byte) = self.incoming_buffer.pop_front() else {
+            return;
+        };
+        // length byte를 수신한 경우
+        self.cancel_timeout(SecsTimeoutUnit::T2);
+        log::debug!("[{}] length byte received", self.state.name());
 
-            let is_length_valid = byte >= 10 && byte <= 254;
-            if is_length_valid {
-                // 정상 length 수신한 경우 -> data 수신 모드로 전이
-                self.state_change(Secs1BlockTransferState::RECEIVE(
-                    ReceiveState::WaitingData {
-                        length: byte,
-                        buffer: Vec::new(),
-                    },
-                ));
-            } else {
-                // length가 비정상 -> 데이터 drop 모드로 전이
-                self.state_change(Secs1BlockTransferState::RECEIVE(ReceiveState::InvalidBlock));
-            }
-            self.start_timeout(SecsTimeoutUnit::T1); // length byte 수신 후 data byte 수신 대기를 위한 T1 timer 시작
+        let is_length_valid = byte >= 10 && byte <= 254;
+        if is_length_valid {
+            // 정상 length 수신한 경우 -> data 수신 모드로 전이
+            self.state_change(Secs1BlockTransferState::RECEIVE(
+                ReceiveState::WaitingData {
+                    length: byte,
+                    buffer: Vec::new(),
+                },
+            ));
+        } else {
+            // length가 비정상 -> 데이터 drop 모드로 전이
+            self.state_change(Secs1BlockTransferState::RECEIVE(ReceiveState::InvalidBlock));
         }
+        self.start_timeout(SecsTimeoutUnit::T1); // length byte 수신 후 data byte 수신 대기를 위한 T1 timer 시작
     }
 
     /// length byte를 기반으로 본문 데이터를 기다린다.
@@ -412,46 +414,46 @@ impl Secs1BlockTransferMachine {
 
         // 데이터가 들어온 상황이므로 초기화
         self.cancel_timeout(SecsTimeoutUnit::T1);
-        if let Secs1BlockTransferState::RECEIVE(ReceiveState::WaitingData { length, buffer }) =
+
+        let Secs1BlockTransferState::RECEIVE(ReceiveState::WaitingData { length, buffer }) =
             &mut self.state
-        {
-            while let Some(byte) = self.incoming_buffer.pop_front() {
-                buffer.push(byte);
+        else {
+             panic!("invalid state: process_waiting_data only called in InvalidBlock state");
+        };
+        while let Some(byte) = self.incoming_buffer.pop_front() {
+            buffer.push(byte);
 
-                // 데이터를 정상적으로 수신함
-                if buffer.len() == (*length + 2) as usize {
-                    let checksum_start = buffer.len() - 2;
-                    let (data_part, checksum_part) = buffer.split_at(checksum_start);
-                    let expected = u16::from_be_bytes([checksum_part[0], checksum_part[1]]);
+            // 데이터를 정상적으로 수신함
+            if buffer.len() == (*length + 2) as usize {
+                let checksum_start = buffer.len() - 2;
+                let (data_part, checksum_part) = buffer.split_at(checksum_start);
+                let expected = u16::from_be_bytes([checksum_part[0], checksum_part[1]]);
 
-                    // 블록 완성 && checksum 검증 성공 -> 상위에 블록 전달 + ACK 전송 + IDLE 복귀
-                    if let Ok(block) = Secs1Block::try_from(data_part)
-                        && block.verify_checksum(expected)
-                    {
-                        log::debug!(
-                            "[{}] success to recv block. {:?}",
-                            self.state.name(),
-                            block.header
-                        );
+                // 블록 완성 && checksum 검증 성공 -> 상위에 블록 전달 + ACK 전송 + IDLE 복귀
+                if let Ok(block) = Secs1Block::try_from(data_part)
+                    && block.verify_checksum(expected)
+                {
+                    log::debug!(
+                        "[{}] success to recv block. {:?}",
+                        self.state.name(),
+                        block.header
+                    );
 
-                        self.emit_block(block);
-                        self.completion_with_send_ack();
-                        log::debug!("[{}] send ACK, return to idle", self.state.name());
-                        return;
-                    } else {
-                        // 블록 파싱 실패 -> 남은 T1 기간동안 데이터 전부 버린 후 NAK 전송 + IDLE 복귀
-                        self.emit_event(Secs1BlockTransferEvent::ReceiveFailed {
-                            error: SecsTransportError::BlockError,
-                        });
-                        log::warn!(
-                            "[{}] something wrong when parsing block... skip next bytes",
-                            self.state.name()
-                        );
-                        self.state_change(Secs1BlockTransferState::RECEIVE(
-                            ReceiveState::InvalidBlock,
-                        ));
-                        break;
-                    }
+                    self.emit_block(block);
+                    self.completion_with_send_ack();
+                    log::debug!("[{}] send ACK, return to idle", self.state.name());
+                    return;
+                } else {
+                    // 블록 파싱 실패 -> 남은 T1 기간동안 데이터 전부 버린 후 NAK 전송 + IDLE 복귀
+                    self.emit_event(Secs1BlockTransferEvent::ReceiveFailed {
+                        error: SecsTransportError::BlockError,
+                    });
+                    log::warn!(
+                        "[{}] something wrong when parsing block... skip next bytes",
+                        self.state.name()
+                    );
+                    self.state_change(Secs1BlockTransferState::RECEIVE(ReceiveState::InvalidBlock));
+                    break;
                 }
             }
         }
@@ -466,15 +468,15 @@ impl Secs1BlockTransferMachine {
 
         self.cancel_timeout(SecsTimeoutUnit::T1); // 타임아웃 초기화
 
-        if let Secs1BlockTransferState::RECEIVE(ReceiveState::InvalidBlock) = self.state {
-            self.incoming_buffer.clear();
-            log::warn!(
-                "[{}] invalid block state. clear incoming buffer",
-                self.state.name()
-            );
-        } else {
+        let Secs1BlockTransferState::RECEIVE(ReceiveState::InvalidBlock) = self.state else {
             panic!("invalid state: process_invalid_block only called in InvalidBlock state");
-        }
+        };
+
+        self.incoming_buffer.clear();
+        log::warn!(
+            "[{}] invalid block state. clear incoming buffer",
+            self.state.name()
+        );
 
         self.start_timeout(SecsTimeoutUnit::T1); // 다음 데이터 대기(T1)
     }

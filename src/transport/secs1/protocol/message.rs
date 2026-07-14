@@ -1,6 +1,8 @@
 ﻿use crate::core::SecsMessage;
 use crate::transport::DeviceId;
-use crate::transport::secs1::protocol::message::transaction::Secs1TransactionEffect;
+use crate::transport::secs1::protocol::message::transaction::{
+    Secs1MessageTransaction, Secs1TransactionEffect,
+};
 use crate::transport::secs1::protocol::message::transaction_manager::Secs1TransactionManager;
 use crate::{
     transport::{
@@ -140,6 +142,46 @@ impl Secs1MessageMachine {
         TransactionKey::from(role, direction, system_byte)
     }
 
+    /// transaction이 만든 출력물을 한 번에 꺼낸다.
+    fn take_transaction_outputs(
+        transaction: &mut Secs1MessageTransaction,
+    ) -> (Vec<SecsMessage>, Vec<Secs1Block>, Vec<Secs1TransactionEffect>) {
+        let mut reads = Vec::new();
+        while let Some(msg) = transaction.poll_read() {
+            reads.push(msg);
+        }
+
+        let mut writes = Vec::new();
+        while let Some(block) = transaction.poll_write() {
+            writes.push(block);
+        }
+
+        let mut effects = Vec::new();
+        while let Some(effect) = transaction.poll_event() {
+            effects.push(effect);
+        }
+        (reads, writes, effects)
+    }
+
+    /// transaction 출력물을 엔진 큐에 반영한다.
+    fn handle_transaction_outputs(
+        &mut self,
+        outputs: (Vec<SecsMessage>, Vec<Secs1Block>, Vec<Secs1TransactionEffect>),
+        transaction_key: &TransactionKey,
+    ) {
+        let (reads, writes, effects) = outputs;
+
+        for msg in reads {
+            self.outgoing_msgs.push_back(msg);
+        }
+
+        for block in writes {
+            self.write_block(block);
+        }
+
+        self.handle_effects(effects, transaction_key);
+    }
+
     fn process_send(&mut self, msg: SecsMessage) {
         // 1.  SxFy, y&1 == 0인 경우 -> 기존 프로세스 참조
         let stream = msg.payload.stream;
@@ -160,9 +202,8 @@ impl Secs1MessageMachine {
                     return;
                 }
             };
-            if let Some(block) = transaction.poll_send() {
-                self.write_block(block);
-            }
+            let outputs = Self::take_transaction_outputs(transaction);
+            self.handle_transaction_outputs(outputs, &transaction_key);
         } else {
             // 상대 request 받고 대응되는 메시지 보내는 상황
             let transaction_key = match self.take_reply_transaction_key(stream, function) {
@@ -185,10 +226,10 @@ impl Secs1MessageMachine {
                 }
             };
 
-            transaction.handle_reply(msg);
-            if let Some(block) = transaction.poll_send() {
-                self.write_block(block);
-            }
+            transaction.handle_write(msg).unwrap();
+            
+            let outputs = Self::take_transaction_outputs(transaction);
+            self.handle_transaction_outputs(outputs, &transaction_key);
         }
     }
 
@@ -210,9 +251,9 @@ impl Secs1MessageMachine {
             },
         };
 
-        transaction.handle_receive(block);
-        let effects = transaction.poll_effects();
-        self.handle_effects(effects, &transaction_key);
+        transaction.handle_read(block).unwrap();
+        let outputs = Self::take_transaction_outputs(transaction);
+        self.handle_transaction_outputs(outputs, &transaction_key);
     }
 
     fn handle_effects(
@@ -229,7 +270,14 @@ impl Secs1MessageMachine {
                     self.cancel_timeout(secs_timeout_unit);
                 }
                 Secs1TransactionEffect::ErrorOccured(error) => {
-                    self.emit_event(Secs1MessageEvent::ErrorOccured(error));
+                    if let SecsTransportError::Timeout(timeout_unit) = error {
+                        self.emit_event(Secs1MessageEvent::MessageTimeout {
+                            transaction_key: *transaction_key,
+                            timeout_unit,
+                        });
+                    } else {
+                        self.emit_event(Secs1MessageEvent::ErrorOccured(error));
+                    }
                 }
                 Secs1TransactionEffect::RecvComplete => {
                     self.emit_event(Secs1MessageEvent::RecvComplete {
@@ -274,16 +322,13 @@ impl Secs1MessageMachine {
         let timeout = ticket.timeout;
         let transaction_key = timeout.to_transaction_key();
 
-        // 타임아웃 발생 -> 해당 transaction abort = 제거 처리 후 이벤트 발생
-        if self.transaction_manager.find(&transaction_key).is_some() {
-            self.transaction_manager.remove(&transaction_key);
-            self.emit_event(Secs1MessageEvent::MessageTimeout {
-                transaction_key,
-                timeout_unit: ticket.timeout,
-            });
+        let Some(transaction) = self.transaction_manager.find(&transaction_key) else {
+            return;
         };
 
-        // timeout 발생 -> 대상 트랜잭션 abort 처리
+        transaction.handle_timeout(ticket.timeout).unwrap();
+        let outputs = Self::take_transaction_outputs(transaction);
+        self.handle_transaction_outputs(outputs, &transaction_key);
     }
 
     // 외부 signal에 대해 아이템을 처리한다.
@@ -299,16 +344,9 @@ impl Secs1MessageMachine {
             return;
         };
 
-        transaction.handle_signal(signal);
-
-        let block = transaction.poll_send();
-        let effects = transaction.poll_effects();
-        
-        if let Some(block) = block {
-            self.write_block(block);
-        }
-
-        self.handle_effects(effects, &transaction_key);
+        let _ = transaction.handle_event(signal);
+        let outputs = Self::take_transaction_outputs(transaction);
+        self.handle_transaction_outputs(outputs, &transaction_key);
     }
 
     /// device id가 알려진 장치인지 체크
@@ -363,5 +401,83 @@ impl Protocol<Secs1Block, SecsMessage, Secs1MessageSignal> for Secs1MessageMachi
     /// 외부 시스템에서 전송할 메시지를 가져간다.
     fn poll_event(&mut self) -> Option<Self::Eout> {
         self.outgoing_events.pop_front()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::{
+        core::SecsMessage,
+        transport::error::SecsTransportError,
+        transport::{
+            DeviceId, Rbit, SecsTimeoutUnit, SystemByte,
+            secs1::{
+                config::Secs1TransportConfig,
+                protocol::message::transaction::Secs1TransactionEffect,
+            },
+        },
+    };
+    use core::time::Duration;
+    use sansio::Protocol;
+    use secs_ii::{FunctionId, Secs2Message, StreamId, item::Secs2Variant};
+
+    fn build_primary_message(
+        device_id: DeviceId,
+        system_byte: SystemByte,
+        rbit: Rbit,
+        need_reply: bool,
+    ) -> SecsMessage {
+        let stream = StreamId(1);
+        let function = FunctionId(3);
+        let body = Secs2Variant::list(vec![Secs2Variant::uint4(3001), Secs2Variant::uint4(3002)]);
+        let payload = Secs2Message::new(stream, function, need_reply, body);
+        SecsMessage::new(device_id, system_byte, rbit, payload)
+    }
+
+    #[test]
+    fn test_process_timeout_emits_message_timeout_event() {
+        let config = Secs1TransportConfig {
+            device_id: DeviceId(10),
+            local_role: crate::transport::ConnectionRole::Active,
+            t1_timeout: Duration::from_millis(100),
+            t2_timeout: Duration::from_millis(100),
+            t3_timeout: Duration::from_millis(100),
+            t4_timeout: Duration::from_millis(100),
+            t2_rty_limit: 3,
+        };
+        let mut machine = Secs1MessageMachine::new(&config);
+        let system_byte = SystemByte(101);
+        let msg = build_primary_message(DeviceId(10), system_byte, Rbit::FORWARD, true);
+
+        machine.handle_write(msg).unwrap();
+        let block = machine.poll_write().unwrap();
+        let expected_key = machine.get_transaction_key(&block.header);
+        machine.handle_effects(
+            vec![
+                Secs1TransactionEffect::ErrorOccured(SecsTransportError::Timeout(
+                    SecsTimeoutUnit::T3(expected_key),
+                )),
+                Secs1TransactionEffect::TransactionEnd,
+            ],
+            &expected_key,
+        );
+
+        let mut events = Vec::new();
+        while let Some(event) = machine.poll_event() {
+            events.push(event);
+        }
+
+        assert!(events.iter().any(|event| {
+            matches!(
+                event,
+                Secs1MessageEvent::MessageTimeout {
+                    transaction_key,
+                    timeout_unit
+                } if *transaction_key == expected_key && *timeout_unit == SecsTimeoutUnit::T3(expected_key)
+            )
+        }));
+        assert!(machine.transaction_manager.find(&expected_key).is_none());
     }
 }

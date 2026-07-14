@@ -9,6 +9,7 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use core::mem;
 use log;
+use sansio::Protocol;
 use secs_ii::{FunctionId, StreamId};
 
 #[derive(Debug)]
@@ -160,7 +161,7 @@ impl Secs1MessageTransaction {
         tx
     }
 
-    pub fn handle_receive(&mut self, block: Secs1Block) {
+    fn handle_receive(&mut self, block: Secs1Block) {
         // 중복 block 발생 -> discard 후 recv 대기
         if self.is_duplicate(&block.header) {
             return;
@@ -180,66 +181,68 @@ impl Secs1MessageTransaction {
         }
 
         // 상태 전이 수행
-        if let Secs1TransactionState::WaitRecv = self.state {
+        if matches!(self.state, Secs1TransactionState::WaitRecv) {
             self.enter_recv();
         }
 
         self.state.recv_next(block);
 
-        if let Secs1TransactionState::Recv { blocks } = &self.state {
-            let block = match blocks.last() {
-                Some(b) => b,
-                None => return,
+        let Secs1TransactionState::Recv { blocks } = &self.state else {
+            return;
+        };
+
+        let block = match blocks.last() {
+            Some(b) => b,
+            None => return,
+        };
+
+        let header = block.header;
+
+        // timer 초기화
+        if header.is_first_block() {
+            // secondary first: cancel reply timer -> wait recv 상태
+            if header.is_secondary() {
+                self.cancel_reply_timer();
+            }
+        } else {
+            // not first: cancel inter block timer
+            self.cancel_inter_block_timer();
+        }
+
+        if header.is_end() {
+            // recv 성공, 블록 상위 전송
+            let blocks = match &mut self.state {
+                Secs1TransactionState::Recv { blocks } => mem::take(blocks),
+                _ => unreachable!(),
             };
 
-            let header = block.header;
+            let decode_result = decode(blocks);
+            match decode_result {
+                Ok(msg) => {
+                    self.write_recv(msg);
+                    self.emit_effect(Secs1TransactionEffect::RecvComplete);
 
-            // timer 초기화
-            if header.is_first_block() {
-                // secondary first: cancel reply timer -> wait recv 상태
-                if header.is_secondary() {
-                    self.cancel_reply_timer();
-                }
-            } else {
-                // not first: cancel inter block timer
-                self.cancel_inter_block_timer();
-            }
-
-            if header.is_end() {
-                // recv 성공, 블록 상위 전송
-                let blocks = match &mut self.state {
-                    Secs1TransactionState::Recv { blocks } => mem::take(blocks),
-                    _ => unreachable!(),
-                };
-
-                let decode_result = decode(blocks);
-                match decode_result {
-                    Ok(msg) => {
-                        self.write_recv(msg);
-                        self.emit_effect(Secs1TransactionEffect::RecvComplete);
-
-                        if header.is_primary() && header.need_reply() {
-                            // 상대방이 보낸 것에 응답이 필요한 경우 -> 종료 X, 내부적인 send 대기
-                            self.enter_wait_send(&header);
-                        } else {
-                            self.enter_end();
-                        }
-                    }
-                    Err(err) => {
-                        // 실패와 함께 트랜잭션 종료
-                        self.emit_effect(Secs1TransactionEffect::ErrorOccured(
-                            SecsTransportError::MessageConvertFailed(err),
-                        ));
+                    if header.is_primary() && header.need_reply() {
+                        // 상대방이 보낸 것에 응답이 필요한 경우 -> 종료 X, 내부적인 send 대기
+                        self.enter_wait_send(&header);
+                    } else {
                         self.enter_end();
                     }
                 }
-            } else {
-                self.set_inter_block_timer(&header);
+                Err(err) => {
+                    // 실패와 함께 트랜잭션 종료
+                    self.emit_effect(Secs1TransactionEffect::ErrorOccured(
+                        SecsTransportError::MessageConvertFailed(err),
+                    ));
+                    self.enter_end();
+                }
             }
-        };
+        } else {
+            self.set_inter_block_timer(&header);
+        }
     }
 
-    pub fn handle_signal(&mut self, signal: Secs1MessageSignal) {
+    fn handle_signal(&mut self, signal: Secs1MessageSignal) {
         match signal {
             Secs1MessageSignal::BlockSendSuccess { header } => {
                 self.on_send(&header);
@@ -255,20 +258,24 @@ impl Secs1MessageTransaction {
         }
     }
 
-    pub fn handle_reply(&mut self, msg: SecsMessage) {
-        if let Secs1TransactionState::WaitSend = self.state {
-            let blocks = match encode(msg) {
-                Ok(blocks) => blocks,
-                Err(err) => {
-                    self.emit_effect(Secs1TransactionEffect::ErrorOccured(
-                        SecsTransportError::MessageConvertFailed(err),
-                    ));
-                    self.enter_end();
-                    return;
-                }
-            };
-            self.enter_send(blocks);
+    fn handle_reply(&mut self, msg: SecsMessage) {
+        // 초기 상태 가드
+        if !matches!(self.state, Secs1TransactionState::WaitSend) {
+            log::warn!("handle_reply works only in wait send state");
+            return;
         }
+
+        let blocks = match encode(msg) {
+            Ok(blocks) => blocks,
+            Err(err) => {
+                self.emit_effect(Secs1TransactionEffect::ErrorOccured(
+                    SecsTransportError::MessageConvertFailed(err),
+                ));
+                self.enter_end();
+                return;
+            }
+        };
+        self.enter_send(blocks);
     }
 
     fn send_next(&mut self) {
@@ -284,7 +291,7 @@ impl Secs1MessageTransaction {
         self.outgoing_recv_queue.push_back(msg);
     }
 
-    pub fn poll_recv(&mut self) -> Option<SecsMessage> {
+    fn poll_recv(&mut self) -> Option<SecsMessage> {
         self.outgoing_recv_queue.pop_front()
     }
 
@@ -292,7 +299,7 @@ impl Secs1MessageTransaction {
         self.outgoing_send_queue.push_back(block);
     }
 
-    pub fn poll_send(&mut self) -> Option<Secs1Block> {
+    fn poll_send(&mut self) -> Option<Secs1Block> {
         self.outgoing_send_queue.pop_front()
     }
 
@@ -339,23 +346,26 @@ impl Secs1MessageTransaction {
 
     /// send가 발생했을 때 동작을 정의
     fn on_send(&mut self, header: &Secs1BlockHeader) {
-        if matches!(self.state, Secs1TransactionState::Send { .. }) {
-            // 블록이 비어 있는 경우
-            if self.state.is_send_end() {
-                log::debug!("message send success. owner = {:?}", self.id.owner);
-                self.emit_effect(Secs1TransactionEffect::SendComplete);
+        if !matches!(self.state, Secs1TransactionState::Send { .. }) {
+            log::warn!("on_send can be called only in send state");
+            return;
+        }
 
-                if header.is_primary() && header.need_reply() {
-                    // primary = 내가 보냄 + need reply => 응답 대기
-                    self.enter_wait_recv(&header);
-                } else {
-                    // secondary 또는 reply가 필요 없는 경우 -> 종료
-                    self.enter_end();
-                }
+        // 블록이 비어 있는 경우
+        if self.state.is_send_end() {
+            log::debug!("message send success. owner = {:?}", self.id.owner);
+            self.emit_effect(Secs1TransactionEffect::SendComplete);
+
+            if header.is_primary() && header.need_reply() {
+                // primary = 내가 보냄 + need reply => 응답 대기
+                self.enter_wait_recv(&header);
             } else {
-                // 블록이 남아 있으면 다음 블록 전송
-                self.send_next();
+                // secondary 또는 reply가 필요 없는 경우 -> 종료
+                self.enter_end();
             }
+        } else {
+            // 블록이 남아 있으면 다음 블록 전송
+            self.send_next();
         }
     }
 
@@ -364,30 +374,18 @@ impl Secs1MessageTransaction {
         self.outgoing_effects.push_back(effect);
     }
 
-    // /// 외부에서 트랜잭션 effect 수신
-    // pub fn poll_effect(&mut self) -> Option<Secs1TransactionEffect> {
-    //     return self.effects.pop_front();
-    // }
-
-    /// 외부에서 트랜잭션 effect 수신
-    pub fn poll_effects(&mut self) -> Vec<Secs1TransactionEffect> {
-        Vec::from(mem::take(&mut self.outgoing_effects))
-    }
-
     /// 기대한 블록이 맞는지 체크
     fn is_expected(&self, actual: &Secs1BlockHeader) -> bool {
-        if let Some(expected) = &self.expected_header {
-            match self.state {
-                Secs1TransactionState::Recv { .. } => {
-                    Self::is_expected_header_for_inter_block(expected, actual)
-                }
-                Secs1TransactionState::WaitRecv => {
-                    Self::is_expected_header_for_reply(expected, actual)
-                }
-                _ => false,
+        let Some(expected) = &self.expected_header else {
+            return false;
+        };
+
+        match self.state {
+            Secs1TransactionState::Recv { .. } => {
+                Self::is_expected_header_for_inter_block(expected, actual)
             }
-        } else {
-            false
+            Secs1TransactionState::WaitRecv => Self::is_expected_header_for_reply(expected, actual),
+            _ => false,
         }
     }
 
@@ -464,13 +462,65 @@ impl Secs1MessageTransaction {
     // /// 헤더가 이전에 수신한 헤더와 동일한지 체크 (중복 수신 방지)
     fn is_duplicate(&self, header: &Secs1BlockHeader) -> bool {
         if let Some(last) = &self.last_header {
-            return last == header;
+            last == header
+        } else {
+            false
         }
-        return false;
     }
 
     pub fn get_last_header(&self) -> Option<Secs1BlockHeader> {
         self.last_header
+    }
+
+    fn on_timeout(&mut self, timeout: SecsTimeoutUnit) {
+        if matches!(self.state, Secs1TransactionState::End) {
+            return;
+        }
+
+        self.emit_effect(Secs1TransactionEffect::ErrorOccured(
+            SecsTransportError::Timeout(timeout),
+        ));
+        self.enter_end();
+    }
+}
+
+impl Protocol<Secs1Block, SecsMessage, Secs1MessageSignal> for Secs1MessageTransaction {
+    type Rout = SecsMessage;
+    type Wout = Secs1Block;
+    type Eout = Secs1TransactionEffect;
+    type Error = SecsTransportError;
+    type Time = SecsTimeoutUnit;
+
+    fn handle_read(&mut self, msg: Secs1Block) -> Result<(), Self::Error> {
+        self.handle_receive(msg);
+        Ok(())
+    }
+
+    fn poll_read(&mut self) -> Option<Self::Rout> {
+        self.poll_recv()
+    }
+
+    fn handle_write(&mut self, msg: SecsMessage) -> Result<(), Self::Error> {
+        self.handle_reply(msg);
+        Ok(())
+    }
+
+    fn poll_write(&mut self) -> Option<Self::Wout> {
+        self.poll_send()
+    }
+
+    fn handle_event(&mut self, evt: Secs1MessageSignal) -> Result<(), Self::Error> {
+        self.handle_signal(evt);
+        Ok(())
+    }
+
+    fn poll_event(&mut self) -> Option<Self::Eout> {
+        self.outgoing_effects.pop_front()
+    }
+
+    fn handle_timeout(&mut self, now: Self::Time) -> Result<(), Self::Error> {
+        self.on_timeout(now);
+        Ok(())
     }
 }
 
@@ -484,6 +534,7 @@ mod tests {
 
     use crate::{
         core::SecsMessage,
+        transport::error::SecsTransportError,
         transport::{
             DeviceId, Rbit, SecsTimeoutUnit, SystemByte, TransactionKey, TransactionOwner,
             secs1::{
@@ -497,6 +548,7 @@ mod tests {
             },
         },
     };
+    use sansio::Protocol;
 
     fn build_primary_message(
         device_id: DeviceId,
@@ -528,6 +580,14 @@ mod tests {
         msg
     }
 
+    fn drain_effects(transaction: &mut Secs1MessageTransaction) -> Vec<Secs1TransactionEffect> {
+        let mut effects = Vec::new();
+        while let Some(effect) = transaction.poll_event() {
+            effects.push(effect);
+        }
+        effects
+    }
+
     /// primary send 후 secondary를 요구하는 경우
     #[test]
     fn test_send_primary_need_reply() {
@@ -542,7 +602,7 @@ mod tests {
 
         let mut transaction = Secs1MessageTransaction::new_send(key, msg);
 
-        let block = transaction.poll_send().unwrap();
+        let block = transaction.poll_write().unwrap();
 
         let signal = Secs1MessageSignal::BlockSendSuccess {
             header: block.header,
@@ -550,7 +610,7 @@ mod tests {
         transaction.handle_signal(signal);
 
         // send 후 recv 대기 시 reply timer 활성화
-        let effects = transaction.poll_effects();
+        let effects = drain_effects(&mut transaction);
         // 트랜잭션 종료 판정 X. recv 필요
         assert!(!effects.contains(&Secs1TransactionEffect::TransactionEnd));
         assert!(effects.contains(&Secs1TransactionEffect::SendComplete));
@@ -575,11 +635,11 @@ mod tests {
 
         transaction.handle_receive(recv_blocks.pop_front().unwrap());
 
-        let effects = transaction.poll_effects();
+        let effects = drain_effects(&mut transaction);
         assert!(effects.contains(&Secs1TransactionEffect::RecvComplete));
         assert!(effects.contains(&Secs1TransactionEffect::TransactionEnd));
 
-        let result_msg = transaction.poll_recv().unwrap();
+        let result_msg = transaction.poll_read().unwrap();
 
         assert_eq!(result_msg.device_id, expected_dev_id);
         assert_eq!(result_msg.rbit, expected_rbit);
@@ -605,7 +665,7 @@ mod tests {
 
         let mut transaction = Secs1MessageTransaction::new_send(key, msg);
 
-        let block = transaction.poll_send().unwrap();
+        let block = transaction.poll_write().unwrap();
 
         let signal = Secs1MessageSignal::BlockSendSuccess {
             header: block.header,
@@ -613,12 +673,116 @@ mod tests {
         transaction.handle_signal(signal);
 
         // send 후 대기 X -> complete 처리
-        let effects = transaction.poll_effects();
+        let effects = drain_effects(&mut transaction);
 
         // send complete + transaction end effect 발생
         assert!(effects.contains(&Secs1TransactionEffect::SendComplete));
         assert!(effects.contains(&Secs1TransactionEffect::TransactionEnd));
 
+        assert!(matches!(transaction.state, Secs1TransactionState::End));
+    }
+
+    /// primary send 후 reply 대기 중 T3 timeout이 발생하는 경우
+    #[test]
+    fn test_send_primary_timeout_t3() {
+        let device_id = DeviceId(10);
+        let system_byte = SystemByte(101);
+
+        let msg = build_primary_message(device_id, system_byte, Rbit::FORWARD, true);
+
+        let owner = TransactionOwner::Local;
+        let key = TransactionKey::new(owner, system_byte);
+
+        let mut transaction = Secs1MessageTransaction::new_send(key, msg);
+        let block = transaction.poll_write().unwrap();
+
+        transaction.handle_signal(Secs1MessageSignal::BlockSendSuccess {
+            header: block.header,
+        });
+        let _ = drain_effects(&mut transaction);
+
+        transaction
+            .handle_timeout(SecsTimeoutUnit::T3(key))
+            .unwrap();
+
+        let effects = drain_effects(&mut transaction);
+        assert!(effects.contains(&Secs1TransactionEffect::ErrorOccured(
+            SecsTransportError::Timeout(SecsTimeoutUnit::T3(key))
+        )));
+        assert!(effects.contains(&Secs1TransactionEffect::TransactionEnd));
+        assert!(matches!(transaction.state, Secs1TransactionState::End));
+    }
+
+    /// primary recv 중 inter block 대기 상태에서 T4 timeout이 발생하는 경우
+    #[test]
+    fn test_recv_primary_timeout_t4() {
+        let device_id = DeviceId(10);
+        let system_byte = SystemByte(202);
+
+        let large_body = Secs2Variant::list(vec![
+            Secs2Variant::uint8(1001),
+            Secs2Variant::uint8(1002),
+            Secs2Variant::uint8(1003),
+            Secs2Variant::uint8(1004),
+            Secs2Variant::uint8(1005),
+            Secs2Variant::uint8(1006),
+            Secs2Variant::uint8(1007),
+            Secs2Variant::uint8(1008),
+            Secs2Variant::uint8(1009),
+            Secs2Variant::uint8(1010),
+            Secs2Variant::uint8(2001),
+            Secs2Variant::uint8(2002),
+            Secs2Variant::uint8(2003),
+            Secs2Variant::uint8(2004),
+            Secs2Variant::uint8(2005),
+            Secs2Variant::uint8(2006),
+            Secs2Variant::uint8(2007),
+            Secs2Variant::uint8(2008),
+            Secs2Variant::uint8(2009),
+            Secs2Variant::uint8(2010),
+            Secs2Variant::uint8(3001),
+            Secs2Variant::uint8(3002),
+            Secs2Variant::uint8(3003),
+            Secs2Variant::uint8(3004),
+            Secs2Variant::uint8(3005),
+            Secs2Variant::uint8(3006),
+            Secs2Variant::uint8(3007),
+            Secs2Variant::uint8(3008),
+            Secs2Variant::uint8(3009),
+            Secs2Variant::uint8(3010),
+        ]);
+        let msg = SecsMessage::new(
+            device_id,
+            system_byte,
+            Rbit::REVERSE,
+            Secs2Message::new(StreamId(1), FunctionId(3), true, large_body),
+        );
+
+        let recv_blocks = encode(msg).unwrap();
+
+        let owner = TransactionOwner::Remote;
+        let key = TransactionKey::new(owner, system_byte);
+
+        let mut transaction = Secs1MessageTransaction::new_recv(key);
+        transaction.handle_receive(recv_blocks.into_iter().next().unwrap());
+
+        let effects = drain_effects(&mut transaction);
+        assert!(
+            effects.contains(&Secs1TransactionEffect::StartTimeout(SecsTimeoutUnit::T4(
+                key
+            )))
+        );
+        assert!(!effects.contains(&Secs1TransactionEffect::TransactionEnd));
+
+        transaction
+            .handle_timeout(SecsTimeoutUnit::T4(key))
+            .unwrap();
+
+        let effects = drain_effects(&mut transaction);
+        assert!(effects.contains(&Secs1TransactionEffect::ErrorOccured(
+            SecsTransportError::Timeout(SecsTimeoutUnit::T4(key))
+        )));
+        assert!(effects.contains(&Secs1TransactionEffect::TransactionEnd));
         assert!(matches!(transaction.state, Secs1TransactionState::End));
     }
 
@@ -644,7 +808,7 @@ mod tests {
         // primary block 수신
         transaction.handle_receive(recv_blocks.into_iter().next().unwrap());
 
-        let effects = transaction.poll_effects();
+        let effects = drain_effects(&mut transaction);
 
         assert!(effects.contains(&Secs1TransactionEffect::RecvComplete));
         assert!(effects.contains(&Secs1TransactionEffect::ReplyRequired(
@@ -667,7 +831,7 @@ mod tests {
         ));
 
         // 첫 block 송신
-        let block = transaction.poll_send().unwrap();
+        let block = transaction.poll_write().unwrap();
 
         let signal = Secs1MessageSignal::BlockSendSuccess {
             header: block.header,
@@ -675,7 +839,7 @@ mod tests {
 
         transaction.handle_signal(signal);
 
-        let effects = transaction.poll_effects();
+        let effects = drain_effects(&mut transaction);
 
         assert!(effects.contains(&Secs1TransactionEffect::SendComplete));
         assert!(effects.contains(&Secs1TransactionEffect::TransactionEnd));
@@ -703,7 +867,7 @@ mod tests {
         // primary block 수신
         transaction.handle_receive(recv_blocks.into_iter().next().unwrap());
 
-        let effects = transaction.poll_effects();
+        let effects = drain_effects(&mut transaction);
 
         // 수신 성공
         assert!(effects.contains(&Secs1TransactionEffect::RecvComplete));
