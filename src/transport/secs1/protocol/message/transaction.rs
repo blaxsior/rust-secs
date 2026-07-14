@@ -40,6 +40,17 @@ pub enum Secs1TransactionState {
 
 // state 구현은 transaction에서만 접근 가능
 impl Secs1TransactionState {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Idle => "IDLE",
+            Self::Send { .. } => "SEND",
+            Self::WaitRecv => "WAIT_RECV",
+            Self::WaitSend => "WAIT_SEND",
+            Self::Recv { .. } => "RECV",
+            Self::End => "END",
+        }
+    }
+
     /// send transaction state 생성
     fn new_send<B>(blocks: B) -> Self
     where
@@ -91,7 +102,7 @@ impl Secs1TransactionState {
     // }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 // 트랜잭션에 의한 처리가 필요한 경우
 pub enum Secs1TransactionEffect {
     /// Timeout 실행
@@ -139,9 +150,11 @@ impl Secs1MessageTransaction {
 
     pub fn new_send(id: TransactionKey, msg: SecsMessage) -> Self {
         let mut tx = Self::new(id);
+        log::debug!("[tx {:?}] create send transaction", tx.id);
         let blocks = match encode(msg) {
             Ok(blocks) => blocks,
             Err(err) => {
+                log::warn!("[tx {:?}] message encode failed: {:?}", tx.id, err);
                 tx.emit_effect(Secs1TransactionEffect::ErrorOccured(
                     SecsTransportError::MessageConvertFailed(err),
                 ));
@@ -156,14 +169,17 @@ impl Secs1MessageTransaction {
 
     pub fn new_recv(id: TransactionKey) -> Self {
         let mut tx = Self::new(id);
+        log::debug!("[tx {:?}] create recv transaction", tx.id);
         tx.enter_recv();
 
         tx
     }
 
     fn handle_receive(&mut self, block: Secs1Block) {
+        log::debug!("[tx {:?}] handle receive: {:?}", self.id, block.header);
         // 중복 block 발생 -> discard 후 recv 대기
         if self.is_duplicate(&block.header) {
+            log::debug!("[tx {:?}] duplicate block ignored", self.id);
             return;
         }
         // 정상적인 블록 -> dup check를 위한 헤더 저장
@@ -173,6 +189,11 @@ impl Secs1MessageTransaction {
         if !self.is_expected(&block.header) {
             // primary first 아님 -> Block Error 발생
             if !block.header.is_primary() || !block.header.is_first_block() {
+                log::warn!(
+                    "[tx {:?}] unexpected block received: {:?}",
+                    self.id,
+                    block.header
+                );
                 self.emit_effect(Secs1TransactionEffect::ErrorOccured(
                     SecsTransportError::UnexpectedBlock(block.header),
                 ));
@@ -182,6 +203,7 @@ impl Secs1MessageTransaction {
 
         // 상태 전이 수행
         if matches!(self.state, Secs1TransactionState::WaitRecv) {
+            log::debug!("[tx {:?}] switch wait recv -> recv", self.id);
             self.enter_recv();
         }
 
@@ -202,10 +224,12 @@ impl Secs1MessageTransaction {
         if header.is_first_block() {
             // secondary first: cancel reply timer -> wait recv 상태
             if header.is_secondary() {
+                log::debug!("[tx {:?}] first recv block, cancel reply timer", self.id);
                 self.cancel_reply_timer();
             }
         } else {
             // not first: cancel inter block timer
+            log::debug!("[tx {:?}] inter block received, cancel t4", self.id);
             self.cancel_inter_block_timer();
         }
 
@@ -219,6 +243,7 @@ impl Secs1MessageTransaction {
             let decode_result = decode(blocks);
             match decode_result {
                 Ok(msg) => {
+                    log::debug!("[tx {:?}] recv complete", self.id);
                     self.write_recv(msg);
                     self.emit_effect(Secs1TransactionEffect::RecvComplete);
 
@@ -230,6 +255,7 @@ impl Secs1MessageTransaction {
                     }
                 }
                 Err(err) => {
+                    log::warn!("[tx {:?}] message decode failed: {:?}", self.id, err);
                     // 실패와 함께 트랜잭션 종료
                     self.emit_effect(Secs1TransactionEffect::ErrorOccured(
                         SecsTransportError::MessageConvertFailed(err),
@@ -245,9 +271,11 @@ impl Secs1MessageTransaction {
     fn handle_signal(&mut self, signal: Secs1MessageSignal) {
         match signal {
             Secs1MessageSignal::BlockSendSuccess { header } => {
+                log::debug!("[tx {:?}] block send success: {:?}", self.id, header);
                 self.on_send(&header);
             }
             Secs1MessageSignal::BlockSendFailed { .. } => {
+                log::warn!("[tx {:?}] block send failed", self.id);
                 // 전송 실패 알림
                 self.emit_effect(Secs1TransactionEffect::ErrorOccured(
                     SecsTransportError::SendFailed(self.id),
@@ -265,9 +293,11 @@ impl Secs1MessageTransaction {
             return;
         }
 
+        log::debug!("[tx {:?}] handle reply", self.id);
         let blocks = match encode(msg) {
             Ok(blocks) => blocks,
             Err(err) => {
+                log::warn!("[tx {:?}] reply encode failed: {:?}", self.id, err);
                 self.emit_effect(Secs1TransactionEffect::ErrorOccured(
                     SecsTransportError::MessageConvertFailed(err),
                 ));
@@ -279,6 +309,7 @@ impl Secs1MessageTransaction {
     }
 
     fn send_next(&mut self) {
+        log::debug!("[tx {:?}] send next block", self.id);
         let result = self.state.send_next();
 
         if let Some(block) = result {
@@ -304,7 +335,12 @@ impl Secs1MessageTransaction {
     }
 
     fn switch_state(&mut self, state: Secs1TransactionState) {
-        log::debug!("state changed from {:?} to {:?}", self.state, state);
+        log::debug!(
+            "[tx {:?}] state changed: {} -> {}",
+            self.id,
+            self.state.name(),
+            state.name()
+        );
         self.state = state;
     }
 
@@ -312,7 +348,7 @@ impl Secs1MessageTransaction {
     fn enter_end(&mut self) {
         self.switch_state(Secs1TransactionState::End);
         self.emit_effect(Secs1TransactionEffect::TransactionEnd);
-        log::debug!("transaction end");
+        log::debug!("[tx {:?}] transaction end", self.id);
     }
 
     /// wait send state로 진입한다.
@@ -323,6 +359,7 @@ impl Secs1MessageTransaction {
             header.function.reply(),
             self.id,
         ));
+        log::debug!("[tx {:?}] enter wait send", self.id);
     }
 
     /// wait recv state로 진입한다.
@@ -330,17 +367,19 @@ impl Secs1MessageTransaction {
         self.switch_state(Secs1TransactionState::WaitRecv);
         // reply timer 시작
         self.set_reply_timer(header);
-        log::debug!("switch to wait recv");
+        log::debug!("[tx {:?}] enter wait recv", self.id);
     }
 
     /// send state로 진입한다.
     fn enter_send(&mut self, blocks: Vec<Secs1Block>) {
+        log::debug!("[tx {:?}] enter send with {} block(s)", self.id, blocks.len());
         self.switch_state(Secs1TransactionState::new_send(blocks));
         self.send_next();
     }
 
     /// recv state로 진입한다.
     fn enter_recv(&mut self) {
+        log::debug!("[tx {:?}] enter recv", self.id);
         self.switch_state(Secs1TransactionState::new_recv());
     }
 
@@ -353,7 +392,7 @@ impl Secs1MessageTransaction {
 
         // 블록이 비어 있는 경우
         if self.state.is_send_end() {
-            log::debug!("message send success. owner = {:?}", self.id.owner);
+            log::debug!("[tx {:?}] message send success", self.id);
             self.emit_effect(Secs1TransactionEffect::SendComplete);
 
             if header.is_primary() && header.need_reply() {
@@ -420,6 +459,7 @@ impl Secs1MessageTransaction {
 
     /// inter block timer(T4) 지정 + timer 체크 조건 설정
     fn set_inter_block_timer(&mut self, header: &Secs1BlockHeader) {
+        log::debug!("[tx {:?}] start t4", self.id);
         self.emit_effect(Secs1TransactionEffect::StartTimeout(SecsTimeoutUnit::T4(
             self.id,
         )));
@@ -433,6 +473,7 @@ impl Secs1MessageTransaction {
 
     /// inter block timer(T4) 초기화
     fn cancel_inter_block_timer(&mut self) {
+        log::debug!("[tx {:?}] cancel t4", self.id);
         self.emit_effect(Secs1TransactionEffect::ClearTimeout(SecsTimeoutUnit::T4(
             self.id,
         )));
@@ -440,6 +481,7 @@ impl Secs1MessageTransaction {
 
     /// reply timer(T3) 지정 + timer 체크 조건 설정
     fn set_reply_timer(&mut self, header: &Secs1BlockHeader) {
+        log::debug!("[tx {:?}] start t3", self.id);
         self.emit_effect(Secs1TransactionEffect::StartTimeout(SecsTimeoutUnit::T3(
             self.id,
         )));
@@ -454,6 +496,7 @@ impl Secs1MessageTransaction {
 
     /// reply timer(T3) 초기화
     fn cancel_reply_timer(&mut self) {
+        log::debug!("[tx {:?}] cancel t3", self.id);
         self.emit_effect(Secs1TransactionEffect::ClearTimeout(SecsTimeoutUnit::T3(
             self.id,
         )));
@@ -477,6 +520,7 @@ impl Secs1MessageTransaction {
             return;
         }
 
+        log::warn!("[tx {:?}] timeout occurred: {:?}", self.id, timeout);
         self.emit_effect(Secs1TransactionEffect::ErrorOccured(
             SecsTransportError::Timeout(timeout),
         ));

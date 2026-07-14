@@ -89,6 +89,7 @@ struct ReplyMsgKey(StreamId, FunctionId);
 
 impl Secs1MessageMachine {
     pub fn new(config: &Secs1TransportConfig) -> Self {
+        log::debug!("[message] create machine");
         Self {
             outgoing_blocks: VecDeque::new(),
             outgoing_msgs: VecDeque::new(),
@@ -101,6 +102,7 @@ impl Secs1MessageMachine {
             transaction_manager: Secs1TransactionManager::new(),
         }
     }
+
     /// 외부 시스템에 전송할 메시지를 담는다.
     fn emit_event(&mut self, output: Secs1MessageEvent) {
         self.outgoing_events.push_back(output);
@@ -108,17 +110,20 @@ impl Secs1MessageMachine {
 
     /// timeout을 시작한다.
     fn start_timeout(&mut self, timeout: SecsTimeoutUnit) {
+        log::debug!("[message] start timeout {:?}", timeout);
         let ticket = self.timeout_manager.issue(timeout);
         self.outgoing_timeouts.push_back(ticket);
     }
 
     /// timeout을 취소한다.
     fn cancel_timeout(&mut self, timeout: SecsTimeoutUnit) {
+        log::debug!("[message] cancel timeout {:?}", timeout);
         self.timeout_manager.cancel(timeout);
     }
 
     /// block을 쓴다
     fn write_block(&mut self, block: Secs1Block) {
+        log::debug!("[message] queue block {:?}", block.header);
         self.outgoing_blocks.push_back(block);
     }
 
@@ -178,6 +183,7 @@ impl Secs1MessageMachine {
         let (reads, writes, effects) = outputs;
 
         for msg in reads {
+            log::debug!("[message] queue message {:?}", msg.system_byte);
             self.outgoing_msgs.push_back(msg);
         }
 
@@ -189,6 +195,13 @@ impl Secs1MessageMachine {
     }
 
     fn process_send(&mut self, msg: SecsMessage) {
+        log::debug!(
+            "[message] process send: stream={:?} function={:?} need_reply={} system_byte={:?}",
+            msg.payload.stream,
+            msg.payload.function,
+            msg.payload.need_reply,
+            msg.system_byte
+        );
         // 1.  SxFy, y&1 == 0인 경우 -> 기존 프로세스 참조
         let stream = msg.payload.stream;
         let function = msg.payload.function;
@@ -201,6 +214,10 @@ impl Secs1MessageMachine {
             let transaction = match self.transaction_manager.create_send(&transaction_key, msg) {
                 Some(t) => t,
                 None => {
+                    log::warn!(
+                        "[message] failed to create send transaction: {:?}",
+                        transaction_key
+                    );
                     self.emit_event(Secs1MessageEvent::ErrorOccured(
                         SecsTransportError::NoSuchTransaction(transaction_key),
                     ));
@@ -214,6 +231,11 @@ impl Secs1MessageMachine {
             let transaction_key = match self.take_reply_transaction_key(stream, function) {
                 Some(key) => key,
                 None => {
+                    log::warn!(
+                        "[message] no reply transaction for stream={:?}, function={:?}",
+                        stream,
+                        function
+                    );
                     self.emit_event(Secs1MessageEvent::ErrorOccured(
                         SecsTransportError::NoMatchReplyTransaction(stream, function),
                     ));
@@ -224,6 +246,10 @@ impl Secs1MessageMachine {
             let transaction = match self.transaction_manager.find(&transaction_key) {
                 Some(t) => t,
                 None => {
+                    log::warn!(
+                        "[message] send transaction not found: {:?}",
+                        transaction_key
+                    );
                     self.emit_event(Secs1MessageEvent::ErrorOccured(
                         SecsTransportError::NoSuchTransaction(transaction_key),
                     ));
@@ -239,10 +265,12 @@ impl Secs1MessageMachine {
     }
 
     fn process_receive(&mut self, block: Secs1Block) {
+        log::debug!("[message] process receive: {:?}", block.header);
         // Routing ERROR: 내가 다루는 deviceId가 아님 -> 에러 알리고 무시
         let transaction_key = self.get_transaction_key(&block.header);
 
         if !self.is_known_device(&block.header.device_id) {
+            log::warn!("[message] unknown device id: {:?}", block.header.device_id);
             self.handle_unknown_device(block);
             return;
         }
@@ -267,6 +295,7 @@ impl Secs1MessageMachine {
         transaction_key: &TransactionKey,
     ) {
         for effect in effects {
+            log::debug!("[message] handle effect: {:?}", effect);
             match effect {
                 Secs1TransactionEffect::StartTimeout(secs_timeout_unit) => {
                     self.start_timeout(secs_timeout_unit);
@@ -307,6 +336,10 @@ impl Secs1MessageMachine {
 
     /// receive 중 unknown device 발견 시 대응 처리
     fn handle_unknown_device(&mut self, block: Secs1Block) {
+        log::warn!(
+            "[message] handle unknown device: {:?}",
+            block.header.device_id
+        );
         // 상위 측으로 이벤트 알림
         self.emit_event(Secs1MessageEvent::ErrorOccured(
             SecsTransportError::UnknownDeviceId(block.header.device_id),
@@ -318,6 +351,7 @@ impl Secs1MessageMachine {
     }
 
     fn process_timeout(&mut self, ticket: TimeoutTicket) {
+        log::debug!("[message] process timeout: {:?}", ticket.timeout);
         // 1. _now에서 타임아웃 유닛 추출 (구조체에 맞게 메서드 호출)
         let is_timeout_valid = self.timeout_manager.fire(&ticket);
         if !is_timeout_valid {
@@ -338,6 +372,7 @@ impl Secs1MessageMachine {
 
     // 외부 signal에 대해 아이템을 처리한다.
     fn process_signal(&mut self, signal: Secs1MessageSignal) {
+        log::debug!("[message] process signal");
         // send 처리를 위함
         let header = match signal {
             Secs1MessageSignal::BlockSendSuccess { header } => header,
@@ -346,6 +381,7 @@ impl Secs1MessageMachine {
 
         let transaction_key = self.get_transaction_key(&header);
         let Some(transaction) = self.transaction_manager.find(&transaction_key) else {
+            log::debug!("[message] no transaction for signal: {:?}", transaction_key);
             return;
         };
 
@@ -598,7 +634,7 @@ mod tests {
                 ..
             }
         ));
-        
+
         let events = drain_events(&mut machine);
         assert!(!events.is_empty());
         assert!(events.iter().any(|event| matches!(
