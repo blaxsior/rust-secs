@@ -1,7 +1,5 @@
-use crate::core::SecsMessage;
+﻿use crate::core::SecsMessage;
 use crate::transport::DeviceId;
-use crate::transport::secs1::convert::decode;
-use crate::transport::secs1::convert::encode;
 use crate::transport::secs1::protocol::message::transaction::Secs1TransactionEffect;
 use crate::transport::secs1::protocol::message::transaction_manager::Secs1TransactionManager;
 use crate::{
@@ -153,20 +151,7 @@ impl Secs1MessageMachine {
             // 요청 -> 트랜잭션을 새롭게 생성
             let transaction_key = TransactionKey::from(self.role, msg.rbit.into(), system_byte);
 
-            let blocks = match encode(msg) {
-                Ok(it) => it,
-                Err(e) => {
-                    self.emit_event(Secs1MessageEvent::ErrorOccured(
-                        SecsTransportError::MessageConvertFailed(e),
-                    ));
-                    return;
-                }
-            };
-
-            let transaction = match self
-                .transaction_manager
-                .create_send(&transaction_key, blocks)
-            {
+            let transaction = match self.transaction_manager.create_send(&transaction_key, msg) {
                 Some(t) => t,
                 None => {
                     self.emit_event(Secs1MessageEvent::ErrorOccured(
@@ -200,17 +185,7 @@ impl Secs1MessageMachine {
                 }
             };
 
-            let blocks = match encode(msg) {
-                Ok(it) => it,
-                Err(e) => {
-                    self.emit_event(Secs1MessageEvent::ErrorOccured(
-                        SecsTransportError::MessageConvertFailed(e),
-                    ));
-                    return;
-                }
-            };
-
-            transaction.handle_reply(blocks);
+            transaction.handle_reply(msg);
             if let Some(block) = transaction.poll_send() {
                 self.write_block(block);
             }
@@ -324,9 +299,11 @@ impl Secs1MessageMachine {
             return;
         };
 
+        transaction.handle_signal(signal);
+
         let block = transaction.poll_send();
         let effects = transaction.poll_effects();
-
+        
         if let Some(block) = block {
             self.write_block(block);
         }

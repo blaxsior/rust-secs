@@ -1,7 +1,7 @@
-use crate::core::SecsMessage;
+﻿use crate::core::SecsMessage;
 use crate::transport::error::SecsTransportError;
 use crate::transport::secs1::block::Secs1Block;
-use crate::transport::secs1::convert::decode;
+use crate::transport::secs1::convert::{decode, encode};
 use crate::transport::secs1::{block::Secs1BlockHeader, protocol::message::Secs1MessageSignal};
 use crate::transport::{SecsTimeoutUnit, TransactionKey};
 
@@ -136,8 +136,18 @@ impl Secs1MessageTransaction {
         }
     }
 
-    pub fn new_send(id: TransactionKey, blocks: Vec<Secs1Block>) -> Self {
+    pub fn new_send(id: TransactionKey, msg: SecsMessage) -> Self {
         let mut tx = Self::new(id);
+        let blocks = match encode(msg) {
+            Ok(blocks) => blocks,
+            Err(err) => {
+                tx.emit_effect(Secs1TransactionEffect::ErrorOccured(
+                    SecsTransportError::MessageConvertFailed(err),
+                ));
+                tx.enter_end();
+                return tx;
+            }
+        };
         tx.enter_send(blocks);
 
         tx
@@ -245,9 +255,18 @@ impl Secs1MessageTransaction {
         }
     }
 
-    pub fn handle_reply(&mut self, blocks: Vec<Secs1Block>) {
+    pub fn handle_reply(&mut self, msg: SecsMessage) {
         if let Secs1TransactionState::WaitSend = self.state {
-            // 내부 저장한 키와 비교해서 트랜잭션 키가 다르면 전송 실패로 처리
+            let blocks = match encode(msg) {
+                Ok(blocks) => blocks,
+                Err(err) => {
+                    self.emit_effect(Secs1TransactionEffect::ErrorOccured(
+                        SecsTransportError::MessageConvertFailed(err),
+                    ));
+                    self.enter_end();
+                    return;
+                }
+            };
             self.enter_send(blocks);
         }
     }
@@ -517,12 +536,11 @@ mod tests {
 
         let msg = build_primary_message(device_id, system_byte, Rbit::FORWARD, true);
 
-        let send_blocks = encode(msg).unwrap();
         // 내가 주인인 케이스
         let owner = TransactionOwner::Local;
         let key = TransactionKey::new(owner, system_byte);
 
-        let mut transaction = Secs1MessageTransaction::new_send(key, send_blocks);
+        let mut transaction = Secs1MessageTransaction::new_send(key, msg);
 
         let block = transaction.poll_send().unwrap();
 
@@ -581,12 +599,11 @@ mod tests {
 
         let msg = build_primary_message(device_id, system_byte, Rbit::FORWARD, false);
 
-        let send_blocks = encode(msg).unwrap();
         // 내가 주인인 케이스
         let owner = TransactionOwner::Local;
         let key = TransactionKey::new(owner, system_byte);
 
-        let mut transaction = Secs1MessageTransaction::new_send(key, send_blocks);
+        let mut transaction = Secs1MessageTransaction::new_send(key, msg);
 
         let block = transaction.poll_send().unwrap();
 
@@ -642,9 +659,7 @@ mod tests {
 
         // reply 생성
         let reply_msg = build_secondary_message(device_id, system_byte, Rbit::FORWARD, false);
-        let send_blocks = encode(reply_msg).unwrap();
-
-        transaction.handle_reply(send_blocks);
+        transaction.handle_reply(reply_msg);
 
         assert!(matches!(
             transaction.state,

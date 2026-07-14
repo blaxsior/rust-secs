@@ -1,12 +1,8 @@
+﻿use crate::core::SecsMessage;
 use crate::transport::{
-    TransactionKey,
-    secs1::{
-        block::{Secs1Block},
-        protocol::message::transaction::{Secs1MessageTransaction},
-    },
+    TransactionKey, secs1::protocol::message::transaction::Secs1MessageTransaction,
 };
 use alloc::collections::BTreeMap;
-use alloc::vec::Vec;
 
 pub struct Secs1TransactionManager {
     transaction_map: BTreeMap<TransactionKey, Secs1MessageTransaction>,
@@ -15,25 +11,23 @@ pub struct Secs1TransactionManager {
 impl Secs1TransactionManager {
     pub fn new() -> Self {
         Self {
-            transaction_map: BTreeMap::new()
+            transaction_map: BTreeMap::new(),
         }
     }
 
     pub fn create_send(
         &mut self,
         key: &TransactionKey,
-        blocks: Vec<Secs1Block>,
+        msg: SecsMessage,
     ) -> Option<&mut Secs1MessageTransaction> {
-        let transaction =
-            Secs1MessageTransaction::new_send(*key, blocks);
+        let transaction = Secs1MessageTransaction::new_send(*key, msg);
         self.transaction_map.insert(*key, transaction);
 
         self.find(key)
     }
 
     pub fn create_recv(&mut self, key: &TransactionKey) -> Option<&mut Secs1MessageTransaction> {
-        let transaction =
-            Secs1MessageTransaction::new_recv(*key);
+        let transaction = Secs1MessageTransaction::new_recv(*key);
         self.transaction_map.insert(*key, transaction);
 
         self.find(key)
