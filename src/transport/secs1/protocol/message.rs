@@ -133,7 +133,11 @@ impl Secs1MessageMachine {
     }
 
     /// header로부터 recv transaction_key를 획득
-    fn get_transaction_key(&self, context: TransferContext, header: &Secs1BlockHeader) -> TransactionKey {
+    fn get_transaction_key(
+        &self,
+        context: TransferContext,
+        header: &Secs1BlockHeader,
+    ) -> TransactionKey {
         let is_primary = header.function.is_primary();
         let system_byte = header.system_byte;
 
@@ -178,7 +182,7 @@ impl Secs1MessageMachine {
         let (reads, writes, effects) = outputs;
 
         for msg in reads {
-            log::debug!("[message] queue message {:?}", msg.system_byte);
+            log::debug!("[message] queue message {:?}", msg.header.system_byte);
             self.outgoing_msgs.push_back(msg);
         }
 
@@ -192,15 +196,15 @@ impl Secs1MessageMachine {
     fn process_send(&mut self, msg: Secs1Message) {
         log::debug!(
             "[message] process send: stream={:?} function={:?} need_reply={} system_byte={:?}",
-            msg.payload.stream,
-            msg.payload.function,
-            msg.payload.need_reply,
-            msg.system_byte
+            msg.header.stream,
+            msg.header.function,
+            msg.header.wbit.need_reply(),
+            msg.header.system_byte
         );
         // 1.  SxFy, y&1 == 0인 경우 -> 기존 프로세스 참조
-        let stream = msg.payload.stream;
-        let function = msg.payload.function;
-        let system_byte = msg.system_byte;
+        let stream = msg.header.stream;
+        let function = msg.header.function;
+        let system_byte = msg.header.system_byte;
 
         if function.is_primary() {
             // 요청 -> 트랜잭션을 새롭게 생성
@@ -445,14 +449,14 @@ impl Protocol<Secs1Block, Secs1Message, Secs1MessageSignal> for Secs1MessageMach
 mod tests {
     use super::*;
 
-    use crate::transport::secs1::Secs1Message;
+    use crate::transport::secs1::{Secs1Message, Secs1MessageHeader};
     use crate::transport::{
-        ConnectionRole, DeviceId, Rbit, SystemByte, TransactionKey, TransactionOwner,
+        ConnectionRole, DeviceId, Rbit, SystemByte, TransactionKey, TransactionOwner, Wbit,
         secs1::{config::Secs1TransportConfig, convert::encode},
     };
     use core::time::Duration;
     use sansio::Protocol;
-    use secs_ii::{FunctionId, Secs2Message, StreamId, item::Secs2Variant};
+    use secs_ii::{FunctionId, StreamId, item::Secs2Variant};
 
     fn build_primary_message(
         device_id: DeviceId,
@@ -462,9 +466,19 @@ mod tests {
     ) -> Secs1Message {
         let stream = StreamId(1);
         let function = FunctionId(3);
+
+        let header = Secs1MessageHeader {
+            device_id,
+            rbit,
+            stream,
+            function,
+            wbit: Wbit(need_reply),
+            system_byte,
+        };
+
         let body = Secs2Variant::list(vec![Secs2Variant::uint4(3001), Secs2Variant::uint4(3002)]);
-        let payload = Secs2Message::new(stream, function, need_reply, body);
-        Secs1Message::new(device_id, system_byte, rbit, payload)
+
+        Secs1Message::new(header, body)
     }
 
     fn build_secondary_message(
@@ -475,9 +489,18 @@ mod tests {
     ) -> Secs1Message {
         let stream = StreamId(1);
         let function = FunctionId(4);
+        let header = Secs1MessageHeader {
+            device_id,
+            rbit,
+            stream,
+            function,
+            wbit: Wbit(need_reply),
+            system_byte,
+        };
+
         let body = Secs2Variant::list(vec![Secs2Variant::uint8(1500), Secs2Variant::uint8(1501)]);
-        let payload = Secs2Message::new(stream, function, need_reply, body);
-        Secs1Message::new(device_id, system_byte, rbit, payload)
+
+        Secs1Message::new(header, body)
     }
 
     fn build_machine() -> Secs1MessageMachine {
@@ -558,7 +581,7 @@ mod tests {
 
         let messages = drain_messages(&mut machine);
         assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].system_byte, system_byte);
+        assert_eq!(messages[0].header.system_byte, system_byte);
 
         let events = drain_events(&mut machine);
         assert!(events.iter().any(|event| {

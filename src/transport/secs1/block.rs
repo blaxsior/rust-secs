@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use secs_ii::{FunctionId, StreamId};
 
-use crate::transport::{DeviceId, Rbit, SystemByte, error::SecsTransportError};
+use crate::transport::{DeviceId, Rbit, SystemByte, Wbit, error::SecsTransportError};
 
 const WITHOUT_MSB: u8 = 0x7F;
 const MSB_ONLY: u8 = 0x80;
@@ -83,7 +83,7 @@ pub struct Secs1BlockHeader {
     /// reverse bit. eqp -> host인 경우 true
     pub rbit: Rbit,
     /// wait bit. primary msg에 대한 응답이 필요한 경우 true
-    pub wbit: bool,
+    pub wbit: Wbit,
     pub stream: StreamId,
     pub function: FunctionId,
     /// end bit. 마지막 block인 경우 true
@@ -101,7 +101,7 @@ impl Secs1BlockHeader {
         h[0] = ((self.rbit.0 as u8) << 7) | ((self.device_id.0 >> 8) as u8 & WITHOUT_MSB);
         h[1] = self.device_id.0 as u8;
 
-        h[2] = ((self.wbit as u8) << 7) | (self.stream.0 & WITHOUT_MSB);
+        h[2] = ((self.wbit.0 as u8) << 7) | (self.stream.0 & WITHOUT_MSB);
         h[3] = self.function.0;
 
         h[4] = ((self.ebit as u8) << 7) | ((self.block_no >> 8) as u8 & WITHOUT_MSB);
@@ -119,7 +119,7 @@ impl Secs1BlockHeader {
 
     /// 응답을 요구하는지 여부
     pub fn need_reply(&self) -> bool {
-        self.wbit
+        self.wbit.need_reply()
     }
 
     /// primary message인지 여부
@@ -146,7 +146,7 @@ impl TryFrom<[u8; 10]> for Secs1BlockHeader {
             rbit: Rbit(h[0] & MSB_ONLY != 0),
             device_id: DeviceId(u16::from_be_bytes([h[0] & WITHOUT_MSB, h[1]])),
 
-            wbit: h[2] & MSB_ONLY != 0,
+            wbit: Wbit(h[2] & MSB_ONLY != 0),
             stream: StreamId(h[2] & WITHOUT_MSB),
             function: FunctionId(h[3]),
 
@@ -181,7 +181,7 @@ mod tests {
         let header = Secs1BlockHeader {
             rbit: Rbit(true),
             device_id: DeviceId(0x1234),
-            wbit: true,
+            wbit: Wbit(true),
             stream: StreamId(0x45),
             function: FunctionId(0x67),
             ebit: true,
@@ -208,7 +208,7 @@ mod tests {
 
         assert_eq!(header.rbit, Rbit(true));
         assert_eq!(header.device_id, DeviceId(0x1234));
-        assert!(header.wbit);
+        assert_eq!(header.wbit, Wbit(true));
         assert_eq!(header.stream, StreamId(0x45));
         assert_eq!(header.function, FunctionId(0x67));
         assert!(header.ebit);
@@ -221,7 +221,7 @@ mod tests {
         let header = Secs1BlockHeader {
             rbit: Rbit(true),
             device_id: DeviceId(0x1234),
-            wbit: true,
+            wbit: Wbit(true),
             stream: StreamId(0x45),
             function: FunctionId(0x67),
             ebit: true,
@@ -239,7 +239,7 @@ mod tests {
         Secs1BlockHeader {
             rbit: Rbit(true),
             device_id: DeviceId(0x1234),
-            wbit: true,
+            wbit: Wbit(true),
             stream: StreamId(0x45),
             function: FunctionId(0x67),
             ebit: true,

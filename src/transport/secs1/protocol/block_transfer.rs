@@ -632,8 +632,7 @@ mod tests {
     use secs_ii::{FunctionId, StreamId};
 
     use crate::transport::{
-        ConnectionRole, DeviceId, Rbit, SecsTimeoutUnit, SystemByte,
-        secs1::{
+        ConnectionRole, DeviceId, Rbit, SecsTimeoutUnit, SystemByte, Wbit, secs1::{
             block::{Secs1Block, Secs1BlockHeader, Secs1HandshakeCode},
             config::Secs1TransportConfig,
             protocol::block_transfer::{
@@ -671,7 +670,7 @@ mod tests {
         let header = Secs1BlockHeader {
             device_id: device_id,
             rbit: Rbit(false),
-            wbit: true,
+            wbit: Wbit(true),
             stream: StreamId(1),
             function: FunctionId(3),
             ebit: true,

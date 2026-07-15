@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
-use secs_ii::{Secs2Message, convert::secs2::serialize::Encode, item::Secs2Variant};
+use secs_ii::{convert::secs2::serialize::Encode, item::Secs2Variant};
 
-use crate::transport::secs1::Secs1Message;
+use crate::transport::secs1::{Secs1Message, Secs1MessageHeader};
 use crate::transport::{
     error::SecsMessageConvertError,
     secs1::block::{Secs1Block, Secs1BlockHeader},
@@ -34,32 +34,23 @@ pub fn decode(mut blocks: Vec<Secs1Block>) -> Result<Secs1Message, SecsMessageCo
         return Err(SecsMessageConvertError::MissingEbit);
     }
 
-    let device_id = header.device_id;
-    let system_byte = header.system_byte;
-    let rbit = header.rbit;
-
-    let stream = header.stream;
-    let function = header.function;
-    let need_reply = header.need_reply();
+    let header = Secs1MessageHeader::from(header);
 
     let raw_bytes: Vec<u8> = blocks.into_iter().flat_map(|it| it.data).collect();
-    let secs_value = Secs2Variant::try_from(raw_bytes.as_slice())
+    let body = Secs2Variant::try_from(raw_bytes.as_slice())
         .map_err(|e| SecsMessageConvertError::DecodeFailed(e))?;
 
-    let payload = Secs2Message::new(stream, function, need_reply, secs_value);
-    let msg = Secs1Message::new(device_id, system_byte, rbit, payload);
+    let msg = Secs1Message::new(header, body);
 
     Ok(msg)
 }
 
 pub fn encode(msg: Secs1Message) -> Result<Vec<Secs1Block>, SecsMessageConvertError> {
-    let payload = &msg.payload;
-    let stream = payload.stream;
-    let function = payload.function;
-    let need_reply = payload.need_reply;
+    let body = msg.body;
+    let msg_header = msg.header;
 
     let mut raw_data = Vec::new();
-    if let Err(err) = payload.body.encode(&mut raw_data) {
+    if let Err(err) = body.encode(&mut raw_data) {
         return Err(SecsMessageConvertError::EncodeFailed(err));
     }
 
@@ -71,14 +62,14 @@ pub fn encode(msg: Secs1Message) -> Result<Vec<Secs1Block>, SecsMessageConvertEr
 
             // 헤더 구성
             let header = Secs1BlockHeader {
-                device_id: msg.device_id,
-                rbit: msg.rbit,
-                stream: stream,
-                function: function,
-                wbit: need_reply,
+                device_id: msg_header.device_id,
+                rbit: msg_header.rbit,
+                stream: msg_header.stream,
+                function: msg_header.function,
+                wbit: msg_header.wbit,
                 ebit: is_last,
                 block_no: (i + 1) as u16,
-                system_byte: msg.system_byte,
+                system_byte: msg_header.system_byte,
                 // 기타 헤더 필드 설정...
             };
 
@@ -94,41 +85,49 @@ pub fn encode(msg: Secs1Message) -> Result<Vec<Secs1Block>, SecsMessageConvertEr
 
 #[cfg(test)]
 mod tests {
-    use crate::transport::secs1::Secs1Message;
+    use crate::transport::secs1::{Secs1Message, Secs1MessageHeader};
     use crate::transport::{
-        DeviceId, Rbit, SystemByte,
+        DeviceId, Rbit, SystemByte, Wbit,
         secs1::{
             block::{Secs1Block, Secs1BlockHeader},
             convert::{decode, encode},
         },
     };
-    use secs_ii::{FunctionId, Secs2Message, StreamId, item::Secs2Variant};
+    use secs_ii::{FunctionId, StreamId, convert::secs2::serialize::Encode, item::Secs2Variant};
 
     /// primary + need recv 데이터를 요청받은 경우
     #[test]
     fn test_encode_recv_primary_need_reply() {
+        let stream = StreamId(1);
+        let function = FunctionId(3);
         let device_id = DeviceId(1016);
         let system_byte = SystemByte(3030);
         let rbit = Rbit(false);
+        let wbit = Wbit(true);
 
-        let payload = Secs2Message::new(
-            StreamId(1),
-            FunctionId(3),
-            true,
-            Secs2Variant::list(vec![
-                Secs2Variant::uint4(1001),
-                Secs2Variant::uint4(1002),
-                Secs2Variant::uint4(1003),
-                Secs2Variant::uint4(1004),
-                Secs2Variant::uint4(1005),
-                Secs2Variant::uint4(1006),
-                Secs2Variant::uint4(1007),
-                Secs2Variant::uint4(1008),
-                Secs2Variant::uint4(1009),
-                Secs2Variant::uint4(1010),
-            ]),
-        );
-        let msg = Secs1Message::new(device_id, system_byte, rbit, payload);
+        let header = Secs1MessageHeader {
+            stream,
+            function,
+            device_id,
+            system_byte,
+            rbit,
+            wbit
+        };
+
+        let body = Secs2Variant::list(vec![
+            Secs2Variant::uint4(1001),
+            Secs2Variant::uint4(1002),
+            Secs2Variant::uint4(1003),
+            Secs2Variant::uint4(1004),
+            Secs2Variant::uint4(1005),
+            Secs2Variant::uint4(1006),
+            Secs2Variant::uint4(1007),
+            Secs2Variant::uint4(1008),
+            Secs2Variant::uint4(1009),
+            Secs2Variant::uint4(1010),
+        ]);
+
+        let msg = Secs1Message::new(header, body);
         // host -> eqp 가정
 
         let expected_data = vec![
@@ -162,43 +161,38 @@ mod tests {
         let system_byte = SystemByte(3030);
         let rbit = Rbit(false);
 
-        let payload = Secs2Message::new(
-            StreamId(1),
-            FunctionId(4),
-            false,
-            Secs2Variant::list(vec![
-                Secs2Variant::uint8(1001),
-                Secs2Variant::uint8(1002),
-                Secs2Variant::uint8(1003),
-                Secs2Variant::uint8(1004),
-                Secs2Variant::uint8(1005),
-                Secs2Variant::uint8(1006),
-                Secs2Variant::uint8(1007),
-                Secs2Variant::uint8(1008),
-                Secs2Variant::uint8(1009),
-                Secs2Variant::uint8(1010),
-                Secs2Variant::uint8(2001),
-                Secs2Variant::uint8(2002),
-                Secs2Variant::uint8(2003),
-                Secs2Variant::uint8(2004),
-                Secs2Variant::uint8(2005),
-                Secs2Variant::uint8(2006),
-                Secs2Variant::uint8(2007),
-                Secs2Variant::uint8(2008),
-                Secs2Variant::uint8(2009),
-                Secs2Variant::uint8(2010),
-                Secs2Variant::uint8(3001),
-                Secs2Variant::uint8(3002),
-                Secs2Variant::uint8(3003),
-                Secs2Variant::uint8(3004),
-                Secs2Variant::uint8(3005),
-                Secs2Variant::uint8(3006),
-                Secs2Variant::uint8(3007),
-                Secs2Variant::uint8(3008),
-                Secs2Variant::uint8(3009),
-                Secs2Variant::uint8(3010),
-            ]),
-        );
+        let body = Secs2Variant::list(vec![
+            Secs2Variant::uint8(1001),
+            Secs2Variant::uint8(1002),
+            Secs2Variant::uint8(1003),
+            Secs2Variant::uint8(1004),
+            Secs2Variant::uint8(1005),
+            Secs2Variant::uint8(1006),
+            Secs2Variant::uint8(1007),
+            Secs2Variant::uint8(1008),
+            Secs2Variant::uint8(1009),
+            Secs2Variant::uint8(1010),
+            Secs2Variant::uint8(2001),
+            Secs2Variant::uint8(2002),
+            Secs2Variant::uint8(2003),
+            Secs2Variant::uint8(2004),
+            Secs2Variant::uint8(2005),
+            Secs2Variant::uint8(2006),
+            Secs2Variant::uint8(2007),
+            Secs2Variant::uint8(2008),
+            Secs2Variant::uint8(2009),
+            Secs2Variant::uint8(2010),
+            Secs2Variant::uint8(3001),
+            Secs2Variant::uint8(3002),
+            Secs2Variant::uint8(3003),
+            Secs2Variant::uint8(3004),
+            Secs2Variant::uint8(3005),
+            Secs2Variant::uint8(3006),
+            Secs2Variant::uint8(3007),
+            Secs2Variant::uint8(3008),
+            Secs2Variant::uint8(3009),
+            Secs2Variant::uint8(3010),
+        ]);
 
         let expected_data1 = [
             0x01, 0x1E, 0xA1, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0xE9, 0xA1, 0x08,
@@ -229,7 +223,15 @@ mod tests {
             0x0B, 0xC2,
         ];
 
-        let msg = Secs1Message::new(device_id, system_byte, rbit, payload);
+        let header = Secs1MessageHeader {
+            device_id,
+            rbit,
+            wbit: Wbit(true),
+            stream: StreamId(1),
+            function: FunctionId(4),
+            system_byte,
+        };
+        let msg = Secs1Message::new(header, body);
 
         let blocks = encode(msg).expect("message encode failed");
 
@@ -289,47 +291,49 @@ mod tests {
         let device_id = DeviceId(1016);
         let system_byte = SystemByte(3030);
         let rbit = Rbit(false);
+        let expected_body = Secs2Variant::list(vec![
+            Secs2Variant::uint8(1001),
+            Secs2Variant::uint8(1002),
+            Secs2Variant::uint8(1003),
+            Secs2Variant::uint8(1004),
+            Secs2Variant::uint8(1005),
+            Secs2Variant::uint8(1006),
+            Secs2Variant::uint8(1007),
+            Secs2Variant::uint8(1008),
+            Secs2Variant::uint8(1009),
+            Secs2Variant::uint8(1010),
+            Secs2Variant::uint8(2001),
+            Secs2Variant::uint8(2002),
+            Secs2Variant::uint8(2003),
+            Secs2Variant::uint8(2004),
+            Secs2Variant::uint8(2005),
+            Secs2Variant::uint8(2006),
+            Secs2Variant::uint8(2007),
+            Secs2Variant::uint8(2008),
+            Secs2Variant::uint8(2009),
+            Secs2Variant::uint8(2010),
+            Secs2Variant::uint8(3001),
+            Secs2Variant::uint8(3002),
+            Secs2Variant::uint8(3003),
+            Secs2Variant::uint8(3004),
+            Secs2Variant::uint8(3005),
+            Secs2Variant::uint8(3006),
+            Secs2Variant::uint8(3007),
+            Secs2Variant::uint8(3008),
+            Secs2Variant::uint8(3009),
+            Secs2Variant::uint8(3010),
+        ]);
+
         let expected = Secs1Message::new(
-            device_id,
-            system_byte,
-            rbit,
-            Secs2Message::new(
-                StreamId(1),
-                FunctionId(4),
-                false,
-                Secs2Variant::list(vec![
-                    Secs2Variant::uint8(1001),
-                    Secs2Variant::uint8(1002),
-                    Secs2Variant::uint8(1003),
-                    Secs2Variant::uint8(1004),
-                    Secs2Variant::uint8(1005),
-                    Secs2Variant::uint8(1006),
-                    Secs2Variant::uint8(1007),
-                    Secs2Variant::uint8(1008),
-                    Secs2Variant::uint8(1009),
-                    Secs2Variant::uint8(1010),
-                    Secs2Variant::uint8(2001),
-                    Secs2Variant::uint8(2002),
-                    Secs2Variant::uint8(2003),
-                    Secs2Variant::uint8(2004),
-                    Secs2Variant::uint8(2005),
-                    Secs2Variant::uint8(2006),
-                    Secs2Variant::uint8(2007),
-                    Secs2Variant::uint8(2008),
-                    Secs2Variant::uint8(2009),
-                    Secs2Variant::uint8(2010),
-                    Secs2Variant::uint8(3001),
-                    Secs2Variant::uint8(3002),
-                    Secs2Variant::uint8(3003),
-                    Secs2Variant::uint8(3004),
-                    Secs2Variant::uint8(3005),
-                    Secs2Variant::uint8(3006),
-                    Secs2Variant::uint8(3007),
-                    Secs2Variant::uint8(3008),
-                    Secs2Variant::uint8(3009),
-                    Secs2Variant::uint8(3010),
-                ]),
-            ),
+            Secs1MessageHeader {
+                device_id,
+                rbit,
+                wbit: Wbit(false),
+                stream: StreamId(1),
+                function: FunctionId(4),
+                system_byte,
+            },
+            expected_body,
         );
 
         // expected_data1 / expected_data2는 encode 테스트와 동일
@@ -340,7 +344,7 @@ mod tests {
                     device_id,
                     system_byte,
                     block_no: 1,
-                    wbit: false,
+                    wbit: Wbit(false),
                     stream: StreamId(1),
                     function: FunctionId(4),
                     rbit,
@@ -353,7 +357,7 @@ mod tests {
                     device_id,
                     system_byte,
                     block_no: 2,
-                    wbit: false,
+                    wbit: Wbit(false),
                     stream: StreamId(1),
                     function: FunctionId(4),
                     rbit,
@@ -365,15 +369,14 @@ mod tests {
 
         let actual = decode(blocks).expect("message decode failed");
 
-        assert_eq!(expected.device_id, actual.device_id);
-        assert_eq!(expected.rbit, actual.rbit);
-        assert_eq!(expected.system_byte, actual.system_byte);
+        assert_eq!(expected.header.device_id, actual.header.device_id);
+        assert_eq!(expected.header.rbit, actual.header.rbit);
+        assert_eq!(expected.header.system_byte, actual.header.system_byte);
 
-        let expected_payload = expected.payload;
-        let actual_payload = actual.payload;
-
-        assert_eq!(expected_payload.stream, actual_payload.stream);
-        assert_eq!(expected_payload.function, actual_payload.function);
-        assert_eq!(expected_payload.need_reply, actual_payload.need_reply);
+        let mut expected_bytes = Vec::new();
+        expected.body.encode(&mut expected_bytes).unwrap();
+        let mut actual_bytes = Vec::new();
+        actual.body.encode(&mut actual_bytes).unwrap();
+        assert_eq!(expected_bytes, actual_bytes);
     }
 }

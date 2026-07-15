@@ -120,3 +120,11 @@ impl Rbit {
         Self(!self.0)
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Wbit(bool);
+impl Wbit {
+    pub fn need_reply(&self) -> bool {
+        self.0
+    }
+}

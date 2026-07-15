@@ -578,14 +578,15 @@ mod tests {
 
     use std::collections::VecDeque;
 
-    use secs_ii::{FunctionId, Secs2Message, StreamId, item::Secs2Variant};
+    use secs_ii::{FunctionId, StreamId, item::Secs2Variant};
 
     use crate::transport::secs1::Secs1Message;
     use crate::{
         transport::error::SecsTransportError,
         transport::{
-            DeviceId, Rbit, SecsTimeoutUnit, SystemByte, TransactionKey, TransactionOwner,
+            DeviceId, Rbit, SecsTimeoutUnit, SystemByte, TransactionKey, TransactionOwner, Wbit,
             secs1::{
+                Secs1MessageHeader,
                 convert::encode,
                 protocol::message::{
                     Secs1MessageSignal,
@@ -607,8 +608,15 @@ mod tests {
         let stream = StreamId(1);
         let function = FunctionId(3);
         let body = Secs2Variant::list(vec![Secs2Variant::uint4(3001), Secs2Variant::uint4(3002)]);
-        let payload = Secs2Message::new(stream, function, need_reply, body);
-        let msg = Secs1Message::new(device_id, system_byte, rbit, payload);
+        let header = Secs1MessageHeader {
+            device_id,
+            rbit,
+            wbit: Wbit(need_reply),
+            stream,
+            function,
+            system_byte,
+        };
+        let msg = Secs1Message::new(header, body);
 
         msg
     }
@@ -622,8 +630,15 @@ mod tests {
         let stream = StreamId(1);
         let function = FunctionId(4);
         let body = Secs2Variant::list(vec![Secs2Variant::uint8(1500), Secs2Variant::uint8(1501)]);
-        let payload = Secs2Message::new(stream, function, need_reply, body);
-        let msg = Secs1Message::new(device_id, system_byte, rbit, payload);
+        let header = Secs1MessageHeader {
+            device_id,
+            rbit,
+            wbit: Wbit(need_reply),
+            stream,
+            function,
+            system_byte,
+        };
+        let msg = Secs1Message::new(header, body);
 
         msg
     }
@@ -672,12 +687,12 @@ mod tests {
 
         let msg: Secs1Message =
             build_secondary_message(device_id, system_byte, Rbit::REVERSE, false);
-        let expected_dev_id = msg.device_id;
-        let expected_rbit = msg.rbit;
-        let expected_system_byte = msg.system_byte;
-        let expected_stream = msg.payload.stream;
-        let expected_function = msg.payload.function;
-        let expected_need_reply = msg.payload.need_reply;
+        let expected_dev_id = msg.header.device_id;
+        let expected_rbit = msg.header.rbit;
+        let expected_system_byte = msg.header.system_byte;
+        let expected_stream = msg.header.stream;
+        let expected_function = msg.header.function;
+        let expected_wbit = msg.header.wbit;
 
         let mut recv_blocks = VecDeque::from(encode(msg).unwrap());
 
@@ -689,12 +704,12 @@ mod tests {
 
         let result_msg = transaction.poll_read().unwrap();
 
-        assert_eq!(result_msg.device_id, expected_dev_id);
-        assert_eq!(result_msg.rbit, expected_rbit);
-        assert_eq!(result_msg.system_byte, expected_system_byte);
-        assert_eq!(result_msg.payload.stream, expected_stream);
-        assert_eq!(result_msg.payload.function, expected_function);
-        assert_eq!(result_msg.payload.need_reply, expected_need_reply);
+        assert_eq!(result_msg.header.device_id, expected_dev_id);
+        assert_eq!(result_msg.header.rbit, expected_rbit);
+        assert_eq!(result_msg.header.system_byte, expected_system_byte);
+        assert_eq!(result_msg.header.stream, expected_stream);
+        assert_eq!(result_msg.header.function, expected_function);
+        assert_eq!(result_msg.header.wbit, expected_wbit);
 
         assert!(matches!(transaction.state, Secs1TransactionState::End));
     }
@@ -800,10 +815,15 @@ mod tests {
             Secs2Variant::uint8(3010),
         ]);
         let msg = Secs1Message::new(
-            device_id,
-            system_byte,
-            Rbit::REVERSE,
-            Secs2Message::new(StreamId(1), FunctionId(3), true, large_body),
+            Secs1MessageHeader {
+                device_id,
+                rbit: Rbit::REVERSE,
+                wbit: Wbit(true),
+                stream: StreamId(1),
+                function: FunctionId(3),
+                system_byte,
+            },
+            large_body,
         );
 
         let recv_blocks = encode(msg).unwrap();
@@ -842,8 +862,8 @@ mod tests {
 
         // Remote -> Local primary
         let msg = build_primary_message(device_id, system_byte, Rbit::REVERSE, true);
-        let stream = msg.payload.stream;
-        let function = msg.payload.function;
+        let stream = msg.header.stream;
+        let function = msg.header.function;
 
         let recv_blocks = encode(msg).unwrap();
 
