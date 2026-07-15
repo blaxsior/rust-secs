@@ -1,4 +1,4 @@
-﻿use crate::core::SecsMessage;
+﻿use crate::transport::secs1::Secs1Message;
 use crate::transport::secs1::protocol::message::transaction::{
     Secs1MessageTransaction, Secs1TransactionEffect,
 };
@@ -64,7 +64,7 @@ pub struct Secs1MessageMachine {
     /// block 송신할 데이터를 임시로 보관하는 큐. poll_write
     outgoing_blocks: VecDeque<Secs1Block>,
     /// secs-ii msg 수신한 블록들을 임시로 저장하는 큐. poll_read
-    outgoing_msgs: VecDeque<SecsMessage>,
+    outgoing_msgs: VecDeque<Secs1Message>,
     /// 외부로 타임아웃 시작 알리는 큐. poll_timeout
     outgoing_timeouts: VecDeque<TimeoutTicket>,
     /// 외부 발송할 이벤트 목록을 저장해두는 큐. poll_event
@@ -149,7 +149,7 @@ impl Secs1MessageMachine {
     fn take_transaction_outputs(
         transaction: &mut Secs1MessageTransaction,
     ) -> (
-        Vec<SecsMessage>,
+        Vec<Secs1Message>,
         Vec<Secs1Block>,
         Vec<Secs1TransactionEffect>,
     ) {
@@ -174,7 +174,7 @@ impl Secs1MessageMachine {
     fn handle_transaction_outputs(
         &mut self,
         outputs: (
-            Vec<SecsMessage>,
+            Vec<Secs1Message>,
             Vec<Secs1Block>,
             Vec<Secs1TransactionEffect>,
         ),
@@ -194,7 +194,7 @@ impl Secs1MessageMachine {
         self.handle_effects(effects, transaction_key);
     }
 
-    fn process_send(&mut self, msg: SecsMessage) {
+    fn process_send(&mut self, msg: Secs1Message) {
         log::debug!(
             "[message] process send: stream={:?} function={:?} need_reply={} system_byte={:?}",
             msg.payload.stream,
@@ -396,8 +396,8 @@ impl Secs1MessageMachine {
     }
 }
 
-impl Protocol<Secs1Block, SecsMessage, Secs1MessageSignal> for Secs1MessageMachine {
-    type Rout = SecsMessage;
+impl Protocol<Secs1Block, Secs1Message, Secs1MessageSignal> for Secs1MessageMachine {
+    type Rout = Secs1Message;
     type Wout = Secs1Block;
     type Eout = Secs1MessageEvent;
     type Error = SecsTransportError;
@@ -413,7 +413,7 @@ impl Protocol<Secs1Block, SecsMessage, Secs1MessageSignal> for Secs1MessageMachi
         self.outgoing_msgs.pop_front()
     }
 
-    fn handle_write(&mut self, msg: SecsMessage) -> Result<(), Self::Error> {
+    fn handle_write(&mut self, msg: Secs1Message) -> Result<(), Self::Error> {
         self.process_send(msg);
         // self.run();
         Ok(())
@@ -449,12 +449,10 @@ impl Protocol<Secs1Block, SecsMessage, Secs1MessageSignal> for Secs1MessageMachi
 mod tests {
     use super::*;
 
-    use crate::{
-        core::SecsMessage,
-        transport::{
-            ConnectionRole, DeviceId, Rbit, SystemByte, TransactionKey, TransactionOwner,
-            secs1::{config::Secs1TransportConfig, convert::encode},
-        },
+    use crate::transport::secs1::Secs1Message;
+    use crate::transport::{
+        ConnectionRole, DeviceId, Rbit, SystemByte, TransactionKey, TransactionOwner,
+        secs1::{config::Secs1TransportConfig, convert::encode},
     };
     use core::time::Duration;
     use sansio::Protocol;
@@ -465,12 +463,12 @@ mod tests {
         system_byte: SystemByte,
         rbit: Rbit,
         need_reply: bool,
-    ) -> SecsMessage {
+    ) -> Secs1Message {
         let stream = StreamId(1);
         let function = FunctionId(3);
         let body = Secs2Variant::list(vec![Secs2Variant::uint4(3001), Secs2Variant::uint4(3002)]);
         let payload = Secs2Message::new(stream, function, need_reply, body);
-        SecsMessage::new(device_id, system_byte, rbit, payload)
+        Secs1Message::new(device_id, system_byte, rbit, payload)
     }
 
     fn build_secondary_message(
@@ -478,12 +476,12 @@ mod tests {
         system_byte: SystemByte,
         rbit: Rbit,
         need_reply: bool,
-    ) -> SecsMessage {
+    ) -> Secs1Message {
         let stream = StreamId(1);
         let function = FunctionId(4);
         let body = Secs2Variant::list(vec![Secs2Variant::uint8(1500), Secs2Variant::uint8(1501)]);
         let payload = Secs2Message::new(stream, function, need_reply, body);
-        SecsMessage::new(device_id, system_byte, rbit, payload)
+        Secs1Message::new(device_id, system_byte, rbit, payload)
     }
 
     fn build_machine() -> Secs1MessageMachine {
@@ -507,7 +505,7 @@ mod tests {
         events
     }
 
-    fn drain_messages(machine: &mut Secs1MessageMachine) -> Vec<SecsMessage> {
+    fn drain_messages(machine: &mut Secs1MessageMachine) -> Vec<Secs1Message> {
         let mut messages = Vec::new();
         while let Some(msg) = machine.poll_read() {
             messages.push(msg);

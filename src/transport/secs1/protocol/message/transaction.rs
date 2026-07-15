@@ -1,5 +1,5 @@
-﻿use crate::core::SecsMessage;
-use crate::transport::error::SecsTransportError;
+﻿use crate::transport::error::SecsTransportError;
+use crate::transport::secs1::Secs1Message;
 use crate::transport::secs1::block::Secs1Block;
 use crate::transport::secs1::convert::{decode, encode};
 use crate::transport::secs1::{block::Secs1BlockHeader, protocol::message::Secs1MessageSignal};
@@ -131,7 +131,7 @@ pub struct Secs1MessageTransaction {
     last_header: Option<Secs1BlockHeader>,
     expected_header: Option<Secs1BlockHeader>,
     outgoing_effects: VecDeque<Secs1TransactionEffect>,
-    outgoing_recv_queue: VecDeque<SecsMessage>,
+    outgoing_recv_queue: VecDeque<Secs1Message>,
     outgoing_send_queue: VecDeque<Secs1Block>,
 }
 
@@ -148,7 +148,7 @@ impl Secs1MessageTransaction {
         }
     }
 
-    pub fn new_send(id: TransactionKey, msg: SecsMessage) -> Self {
+    pub fn new_send(id: TransactionKey, msg: Secs1Message) -> Self {
         let mut tx = Self::new(id);
         log::debug!("[tx {:?}] create send transaction", tx.id);
         let blocks = match encode(msg) {
@@ -286,7 +286,7 @@ impl Secs1MessageTransaction {
         }
     }
 
-    fn handle_reply(&mut self, msg: SecsMessage) {
+    fn handle_reply(&mut self, msg: Secs1Message) {
         // 초기 상태 가드
         if !matches!(self.state, Secs1TransactionState::WaitSend) {
             log::warn!("handle_reply works only in wait send state");
@@ -318,11 +318,11 @@ impl Secs1MessageTransaction {
         }
     }
 
-    fn write_recv(&mut self, msg: SecsMessage) {
+    fn write_recv(&mut self, msg: Secs1Message) {
         self.outgoing_recv_queue.push_back(msg);
     }
 
-    fn poll_recv(&mut self) -> Option<SecsMessage> {
+    fn poll_recv(&mut self) -> Option<Secs1Message> {
         self.outgoing_recv_queue.pop_front()
     }
 
@@ -372,7 +372,11 @@ impl Secs1MessageTransaction {
 
     /// send state로 진입한다.
     fn enter_send(&mut self, blocks: Vec<Secs1Block>) {
-        log::debug!("[tx {:?}] enter send with {} block(s)", self.id, blocks.len());
+        log::debug!(
+            "[tx {:?}] enter send with {} block(s)",
+            self.id,
+            blocks.len()
+        );
         self.switch_state(Secs1TransactionState::new_send(blocks));
         self.send_next();
     }
@@ -528,8 +532,8 @@ impl Secs1MessageTransaction {
     }
 }
 
-impl Protocol<Secs1Block, SecsMessage, Secs1MessageSignal> for Secs1MessageTransaction {
-    type Rout = SecsMessage;
+impl Protocol<Secs1Block, Secs1Message, Secs1MessageSignal> for Secs1MessageTransaction {
+    type Rout = Secs1Message;
     type Wout = Secs1Block;
     type Eout = Secs1TransactionEffect;
     type Error = SecsTransportError;
@@ -544,7 +548,7 @@ impl Protocol<Secs1Block, SecsMessage, Secs1MessageSignal> for Secs1MessageTrans
         self.poll_recv()
     }
 
-    fn handle_write(&mut self, msg: SecsMessage) -> Result<(), Self::Error> {
+    fn handle_write(&mut self, msg: Secs1Message) -> Result<(), Self::Error> {
         self.handle_reply(msg);
         Ok(())
     }
@@ -576,8 +580,8 @@ mod tests {
 
     use secs_ii::{FunctionId, Secs2Message, StreamId, item::Secs2Variant};
 
+    use crate::transport::secs1::Secs1Message;
     use crate::{
-        core::SecsMessage,
         transport::error::SecsTransportError,
         transport::{
             DeviceId, Rbit, SecsTimeoutUnit, SystemByte, TransactionKey, TransactionOwner,
@@ -599,12 +603,12 @@ mod tests {
         system_byte: SystemByte,
         rbit: Rbit,
         need_reply: bool,
-    ) -> SecsMessage {
+    ) -> Secs1Message {
         let stream = StreamId(1);
         let function = FunctionId(3);
         let body = Secs2Variant::list(vec![Secs2Variant::uint4(3001), Secs2Variant::uint4(3002)]);
         let payload = Secs2Message::new(stream, function, need_reply, body);
-        let msg = SecsMessage::new(device_id, system_byte, rbit, payload);
+        let msg = Secs1Message::new(device_id, system_byte, rbit, payload);
 
         msg
     }
@@ -614,12 +618,12 @@ mod tests {
         system_byte: SystemByte,
         rbit: Rbit,
         need_reply: bool,
-    ) -> SecsMessage {
+    ) -> Secs1Message {
         let stream = StreamId(1);
         let function = FunctionId(4);
         let body = Secs2Variant::list(vec![Secs2Variant::uint8(1500), Secs2Variant::uint8(1501)]);
         let payload = Secs2Message::new(stream, function, need_reply, body);
-        let msg = SecsMessage::new(device_id, system_byte, rbit, payload);
+        let msg = Secs1Message::new(device_id, system_byte, rbit, payload);
 
         msg
     }
@@ -666,7 +670,7 @@ mod tests {
 
         assert!(matches!(transaction.state, Secs1TransactionState::WaitRecv));
 
-        let msg: SecsMessage =
+        let msg: Secs1Message =
             build_secondary_message(device_id, system_byte, Rbit::REVERSE, false);
         let expected_dev_id = msg.device_id;
         let expected_rbit = msg.rbit;
@@ -795,7 +799,7 @@ mod tests {
             Secs2Variant::uint8(3009),
             Secs2Variant::uint8(3010),
         ]);
-        let msg = SecsMessage::new(
+        let msg = Secs1Message::new(
             device_id,
             system_byte,
             Rbit::REVERSE,

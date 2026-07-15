@@ -1,5 +1,6 @@
 pub mod error;
 pub mod secs1;
+pub mod hsms;
 
 /// 현재 transaction ID 값
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

@@ -1,15 +1,13 @@
 use alloc::vec::Vec;
 use secs_ii::{Secs2Message, convert::secs2::serialize::Encode, item::Secs2Variant};
 
-use crate::{
-    core::SecsMessage,
-    transport::{
-        error::SecsMessageConvertError,
-        secs1::block::{Secs1Block, Secs1BlockHeader},
-    },
+use crate::transport::secs1::Secs1Message;
+use crate::transport::{
+    error::SecsMessageConvertError,
+    secs1::block::{Secs1Block, Secs1BlockHeader},
 };
 
-pub fn decode(mut blocks: Vec<Secs1Block>) -> Result<SecsMessage, SecsMessageConvertError> {
+pub fn decode(mut blocks: Vec<Secs1Block>) -> Result<Secs1Message, SecsMessageConvertError> {
     // block이 비어 있는 경우 -> 에러
     if blocks.is_empty() {
         return Err(SecsMessageConvertError::EmptyBlocks);
@@ -49,12 +47,12 @@ pub fn decode(mut blocks: Vec<Secs1Block>) -> Result<SecsMessage, SecsMessageCon
         .map_err(|e| SecsMessageConvertError::DecodeFailed(e))?;
 
     let payload = Secs2Message::new(stream, function, need_reply, secs_value);
-    let msg = SecsMessage::new(device_id, system_byte, rbit, payload);
+    let msg = Secs1Message::new(device_id, system_byte, rbit, payload);
 
     Ok(msg)
 }
 
-pub fn encode(msg: SecsMessage) -> Result<Vec<Secs1Block>, SecsMessageConvertError> {
+pub fn encode(msg: Secs1Message) -> Result<Vec<Secs1Block>, SecsMessageConvertError> {
     let payload = &msg.payload;
     let stream = payload.stream;
     let function = payload.function;
@@ -96,18 +94,15 @@ pub fn encode(msg: SecsMessage) -> Result<Vec<Secs1Block>, SecsMessageConvertErr
 
 #[cfg(test)]
 mod tests {
-    use secs_ii::{FunctionId, Secs2Message, StreamId, item::Secs2Variant};
-
-    use crate::{
-        core::SecsMessage,
-        transport::{
-            DeviceId, Rbit, SystemByte,
-            secs1::{
-                block::{Secs1Block, Secs1BlockHeader},
-                convert::{decode, encode},
-            },
+    use crate::transport::secs1::Secs1Message;
+    use crate::transport::{
+        DeviceId, Rbit, SystemByte,
+        secs1::{
+            block::{Secs1Block, Secs1BlockHeader},
+            convert::{decode, encode},
         },
     };
+    use secs_ii::{FunctionId, Secs2Message, StreamId, item::Secs2Variant};
 
     /// primary + need recv 데이터를 요청받은 경우
     #[test]
@@ -133,7 +128,7 @@ mod tests {
                 Secs2Variant::uint4(1010),
             ]),
         );
-        let msg = SecsMessage::new(device_id, system_byte, rbit, payload);
+        let msg = Secs1Message::new(device_id, system_byte, rbit, payload);
         // host -> eqp 가정
 
         let expected_data = vec![
@@ -234,7 +229,7 @@ mod tests {
             0x0B, 0xC2,
         ];
 
-        let msg = SecsMessage::new(device_id, system_byte, rbit, payload);
+        let msg = Secs1Message::new(device_id, system_byte, rbit, payload);
 
         let blocks = encode(msg).expect("message encode failed");
 
@@ -294,7 +289,7 @@ mod tests {
         let device_id = DeviceId(1016);
         let system_byte = SystemByte(3030);
         let rbit = Rbit(false);
-        let expected = SecsMessage::new(
+        let expected = Secs1Message::new(
             device_id,
             system_byte,
             rbit,

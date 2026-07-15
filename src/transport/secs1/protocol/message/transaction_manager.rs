@@ -1,4 +1,4 @@
-﻿use crate::core::SecsMessage;
+﻿use crate::transport::secs1::Secs1Message;
 use crate::transport::{
     TransactionKey, secs1::protocol::message::transaction::Secs1MessageTransaction,
 };
@@ -18,7 +18,7 @@ impl Secs1TransactionManager {
     pub fn create_send(
         &mut self,
         key: &TransactionKey,
-        msg: SecsMessage,
+        msg: Secs1Message,
     ) -> Option<&mut Secs1MessageTransaction> {
         let transaction = Secs1MessageTransaction::new_send(*key, msg);
         self.transaction_map.insert(*key, transaction);
