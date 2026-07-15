@@ -3,10 +3,10 @@ use crate::transport::secs1::protocol::message::transaction::{
     Secs1MessageTransaction, Secs1TransactionEffect,
 };
 use crate::transport::secs1::protocol::message::transaction_manager::Secs1TransactionManager;
-use crate::transport::{DeviceId, TransactionOwner};
+use crate::transport::{DeviceId, TransactionOwner, TransferContext};
 use crate::{
     transport::{
-        ConnectionRole, SecsTimeoutUnit, TransactionKey,
+        SecsTimeoutUnit, TransactionKey,
         error::SecsTransportError,
         secs1::{
             block::{Secs1Block, Secs1BlockHeader},
@@ -77,8 +77,6 @@ pub struct Secs1MessageMachine {
     /// reply 메시지에 대한 transaction ID - key mapping
     reply_map: BTreeMap<ReplyMsgKey, TransactionKey>,
 
-    /// 연결 모드 -> active or passive
-    role: ConnectionRole,
     /// 트랜잭션 관리 구조체
     transaction_manager: Secs1TransactionManager,
 }
@@ -98,7 +96,6 @@ impl Secs1MessageMachine {
             timeout_manager: TimeoutManager::new(),
             device_id: config.device_id,
             reply_map: BTreeMap::new(),
-            role: config.local_role,
             transaction_manager: Secs1TransactionManager::new(),
         }
     }
@@ -135,14 +132,12 @@ impl Secs1MessageMachine {
         self.reply_map.remove(&ReplyMsgKey(stream, function))
     }
 
-    /// header로부터 transaction_key를 획득
-    fn get_transaction_key(&self, header: &Secs1BlockHeader) -> TransactionKey {
-        let role = self.role;
+    /// header로부터 recv transaction_key를 획득
+    fn get_transaction_key(&self, context: TransferContext, header: &Secs1BlockHeader) -> TransactionKey {
         let is_primary = header.function.is_primary();
-        let rbit = header.rbit;
         let system_byte = header.system_byte;
 
-        TransactionKey::from(role, is_primary, rbit, system_byte)
+        TransactionKey::from(context, is_primary, system_byte)
     }
 
     /// transaction이 만든 출력물을 한 번에 꺼낸다.
@@ -267,7 +262,7 @@ impl Secs1MessageMachine {
     fn process_receive(&mut self, block: Secs1Block) {
         log::debug!("[message] process receive: {:?}", block.header);
         // Routing ERROR: 내가 다루는 deviceId가 아님 -> 에러 알리고 무시
-        let transaction_key = self.get_transaction_key(&block.header);
+        let transaction_key = self.get_transaction_key(TransferContext::Recv, &block.header);
 
         if !self.is_known_device(&block.header.device_id) {
             log::warn!("[message] unknown device id: {:?}", block.header.device_id);
@@ -345,7 +340,7 @@ impl Secs1MessageMachine {
             SecsTransportError::UnknownDeviceId(block.header.device_id),
         ));
 
-        let transaction_key = self.get_transaction_key(&block.header);
+        let transaction_key = self.get_transaction_key(TransferContext::Recv, &block.header);
         // 트랜잭션으로 등록되어 있었던 경우라면 트랜잭션도 취소 처리
         self.transaction_manager.remove(&transaction_key);
     }
@@ -379,7 +374,8 @@ impl Secs1MessageMachine {
             Secs1MessageSignal::BlockSendFailed { header } => header,
         };
 
-        let transaction_key = self.get_transaction_key(&header);
+        // 내가 보낸 것에 대한 트랜잭션 키를 얻어 옴
+        let transaction_key = self.get_transaction_key(TransferContext::Send, &header);
         let Some(transaction) = self.transaction_manager.find(&transaction_key) else {
             log::debug!("[message] no transaction for signal: {:?}", transaction_key);
             return;

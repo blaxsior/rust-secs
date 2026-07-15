@@ -23,6 +23,13 @@ pub enum TransactionOwner {
     Remote,
 }
 
+/// 현재 메시지를 보내는 상황인지, 아니면 받는 상황인지
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum TransferContext {
+    Send,
+    Recv,
+}
+
 /// 각 트랜잭션을 구분하는 식별 정보. 트랜잭션 주도측 + system byte(source_id[16] / transaction_id[16])
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TransactionKey {
@@ -42,18 +49,14 @@ impl TransactionKey {
         Self { owner, system_byte }
     }
 
-    pub fn from(role: ConnectionRole, is_primary: bool, rbit: Rbit, system_byte: SystemByte) -> Self {
+    pub fn from(context: TransferContext, is_primary: bool, system_byte: SystemByte) -> Self {
         // local이 만들었다의 기준
-        // active가 보내는 측인데 primary
-        // active가 받는 측인데 secondary
-        // passive가 보내는 측인데 secondary
-        // passive가 받는 측인데 primary
+        // 보내는 중인데 primary -> 내가 주도
+        // 받는 중에 secondary -> 내가 주도
 
-        let owner = match (role, is_primary, rbit) {
-            (ConnectionRole::Active, true, Rbit::FORWARD) => TransactionOwner::Local,
-            (ConnectionRole::Active, false, Rbit::REVERSE) => TransactionOwner::Local,
-            (ConnectionRole::Passive, true, Rbit::REVERSE) => TransactionOwner::Local,
-            (ConnectionRole::Passive, false, Rbit::FORWARD) => TransactionOwner::Local,
+        let owner = match (context, is_primary) {
+            (TransferContext::Send, true) => TransactionOwner::Local,
+            (TransferContext::Recv, false) => TransactionOwner::Local,
             _ => TransactionOwner::Remote,
         };
 
@@ -94,9 +97,17 @@ pub enum ConnectionRole {
     Passive,
 }
 
-/// SECS 통신 시 사용되는 Device Id
+/// SECS-I 통신 시 사용되는 Device Id
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DeviceId(pub u16);
+
+/// HSMS 통신 시 사용되는 Device Id
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionId(pub u16);
+impl SessionId {
+    ///control message에 사용되는 예약 ID(명세)
+    pub const CONTROL: Self = Self(0xFFFF);
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Rbit(bool);
