@@ -111,7 +111,7 @@ mod tests {
             device_id,
             system_byte,
             rbit,
-            wbit
+            wbit,
         };
 
         let body = Secs2Variant::list(vec![

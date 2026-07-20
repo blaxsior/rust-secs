@@ -1,10 +1,8 @@
+use alloc::string::String;
 use secs_ii::{FunctionId, StreamId, error::Secs2Error};
 use thiserror::Error;
-use alloc::string::String;
 
-use crate::transport::{
-    DeviceId, SecsTimeoutUnit, TransactionKey, secs1::block::Secs1BlockHeader,
-};
+use crate::transport::{DeviceId, SecsTimeoutUnit, TransactionKey, secs1::block::Secs1BlockHeader};
 
 ///
 /// SecsTransport 처리 시 예외
@@ -41,7 +39,6 @@ pub enum SecsTransportError {
     #[error("unexpected block {0:?}")]
     UnexpectedBlock(Secs1BlockHeader),
 
-
     #[error("unknown device id: {0:?}")]
     UnknownDeviceId(DeviceId),
 
@@ -73,5 +70,5 @@ pub enum SecsMessageConvertError {
     DecodeFailed(String),
 
     #[error("encoding error {0:?}")]
-    EncodeFailed(Secs2Error)
+    EncodeFailed(Secs2Error),
 }

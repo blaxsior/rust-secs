@@ -2,8 +2,6 @@ use core::time::Duration;
 
 use crate::transport::{ConnectionRole, DeviceId};
 
-
-
 ///
 /// SECS-I 통신 구성 시 사용하는 설정
 ///

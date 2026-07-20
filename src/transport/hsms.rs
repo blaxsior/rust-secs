@@ -1,5 +1,6 @@
 pub mod config;
 pub mod connection;
+pub mod protocol;
 
 use alloc::vec::Vec;
 use core::convert::TryFrom;
@@ -7,8 +8,8 @@ use core::convert::TryFrom;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use secs_ii::{FunctionId, StreamId, item::Secs2Variant};
 
-use crate::transport::{SessionId, SystemByte};
 use crate::transport::error::SecsTransportError;
+use crate::transport::{SessionId, SystemByte};
 
 const WITHOUT_MSB: u8 = 0x7F;
 const MSB_ONLY: u8 = 0x80;
@@ -169,7 +170,10 @@ impl TryFrom<&[u8]> for HsmsMessage {
 
         let payload = if header.is_data() {
             let body_bytes = &value[14..4 + len];
-            Some(Secs2Variant::try_from(body_bytes).map_err(|_| SecsTransportError::InvalidBlockHeader)?)
+            Some(
+                Secs2Variant::try_from(body_bytes)
+                    .map_err(|_| SecsTransportError::InvalidBlockHeader)?,
+            )
         } else {
             None
         };

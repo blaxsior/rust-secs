@@ -31,19 +31,13 @@ impl From<&Secs1BlockHeader> for Secs1MessageHeader {
             wbit: header.wbit,
             stream: header.stream,
             function: header.function,
-            system_byte: header.system_byte
+            system_byte: header.system_byte,
         }
     }
 }
 
 impl Secs1Message {
-    pub fn new(
-        header: Secs1MessageHeader,
-        body: Secs2Variant,
-    ) -> Self {
-        Self {
-          header,
-          body
-        }
+    pub fn new(header: Secs1MessageHeader, body: Secs2Variant) -> Self {
+        Self { header, body }
     }
 }

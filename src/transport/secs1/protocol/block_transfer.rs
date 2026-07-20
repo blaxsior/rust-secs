@@ -418,7 +418,7 @@ impl Secs1BlockTransferMachine {
         let Secs1BlockTransferState::RECEIVE(ReceiveState::WaitingData { length, buffer }) =
             &mut self.state
         else {
-             panic!("invalid state: process_waiting_data only called in InvalidBlock state");
+            panic!("invalid state: process_waiting_data only called in InvalidBlock state");
         };
         while let Some(byte) = self.incoming_buffer.pop_front() {
             buffer.push(byte);
@@ -632,7 +632,8 @@ mod tests {
     use secs_ii::{FunctionId, StreamId};
 
     use crate::transport::{
-        ConnectionRole, DeviceId, Rbit, SecsTimeoutUnit, SystemByte, Wbit, secs1::{
+        ConnectionRole, DeviceId, Rbit, SecsTimeoutUnit, SystemByte, Wbit,
+        secs1::{
             block::{Secs1Block, Secs1BlockHeader, Secs1HandshakeCode},
             config::Secs1TransportConfig,
             protocol::block_transfer::{

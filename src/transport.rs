@@ -1,6 +1,6 @@
 pub mod error;
-pub mod secs1;
 pub mod hsms;
+pub mod secs1;
 
 /// 현재 transaction ID 값
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -74,6 +74,14 @@ pub enum SecsTimeoutUnit {
     T3(TransactionKey),
     /// inter block timeout: 멀티 블록 전송 시 block 수신 간 간격
     T4(TransactionKey),
+    /// connection seperation timeout: 연속 커넥션 시도 간 대기 시간
+    T5,
+    /// control transaction timeout: control transaction 실패 감지까지 시간
+    T6,
+    /// TCP/IP 커넥션이 not selected 상태로 유지 가능한 시간
+    T7,
+    /// 단일 HSMS 메시지 내 연속 byte 사이 최대 시간 간격
+    T8,
 }
 
 impl SecsTimeoutUnit {
