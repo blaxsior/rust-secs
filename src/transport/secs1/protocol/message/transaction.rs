@@ -616,7 +616,7 @@ mod tests {
             function,
             system_byte,
         };
-        let msg = Secs1Message::new(header, body);
+        let msg = Secs1Message::new(header, Some(body));
 
         msg
     }
@@ -638,7 +638,7 @@ mod tests {
             function,
             system_byte,
         };
-        let msg = Secs1Message::new(header, body);
+        let msg = Secs1Message::new(header, Some(body));
 
         msg
     }
@@ -823,7 +823,7 @@ mod tests {
                 function: FunctionId(3),
                 system_byte,
             },
-            large_body,
+            Some(large_body),
         );
 
         let recv_blocks = encode(msg).unwrap();

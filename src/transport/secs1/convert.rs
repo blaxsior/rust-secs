@@ -37,8 +37,14 @@ pub fn decode(mut blocks: Vec<Secs1Block>) -> Result<Secs1Message, SecsMessageCo
     let header = Secs1MessageHeader::from(header);
 
     let raw_bytes: Vec<u8> = blocks.into_iter().flat_map(|it| it.data).collect();
-    let body = Secs2Variant::try_from(raw_bytes.as_slice())
-        .map_err(|e| SecsMessageConvertError::DecodeFailed(e))?;
+    let body = if raw_bytes.is_empty() {
+        None
+    } else {
+        Some(
+            Secs2Variant::try_from(raw_bytes.as_slice())
+                .map_err(|e| SecsMessageConvertError::DecodeFailed(e))?,
+        )
+    };
 
     let msg = Secs1Message::new(header, body);
 
@@ -50,8 +56,10 @@ pub fn encode(msg: Secs1Message) -> Result<Vec<Secs1Block>, SecsMessageConvertEr
     let msg_header = msg.header;
 
     let mut raw_data = Vec::new();
-    if let Err(err) = body.encode(&mut raw_data) {
-        return Err(SecsMessageConvertError::EncodeFailed(err));
+    if let Some(secs2_body) = body {
+        secs2_body
+            .encode(&mut raw_data)
+            .map_err(|it| SecsMessageConvertError::EncodeFailed(it))?
     }
 
     let blocks = raw_data
@@ -127,7 +135,7 @@ mod tests {
             Secs2Variant::uint4(1010),
         ]);
 
-        let msg = Secs1Message::new(header, body);
+        let msg = Secs1Message::new(header, Some(body));
         // host -> eqp 가정
 
         let expected_data = vec![
@@ -231,7 +239,7 @@ mod tests {
             function: FunctionId(4),
             system_byte,
         };
-        let msg = Secs1Message::new(header, body);
+        let msg = Secs1Message::new(header, Some(body));
 
         let blocks = encode(msg).expect("message encode failed");
 
@@ -333,7 +341,7 @@ mod tests {
                 function: FunctionId(4),
                 system_byte,
             },
-            expected_body,
+            Some(expected_body),
         );
 
         // expected_data1 / expected_data2는 encode 테스트와 동일
@@ -374,9 +382,9 @@ mod tests {
         assert_eq!(expected.header.system_byte, actual.header.system_byte);
 
         let mut expected_bytes = Vec::new();
-        expected.body.encode(&mut expected_bytes).unwrap();
+        expected.body.unwrap().encode(&mut expected_bytes).unwrap();
         let mut actual_bytes = Vec::new();
-        actual.body.encode(&mut actual_bytes).unwrap();
+        actual.body.unwrap().encode(&mut actual_bytes).unwrap();
         assert_eq!(expected_bytes, actual_bytes);
     }
 }

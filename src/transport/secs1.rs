@@ -11,7 +11,7 @@ use crate::transport::{DeviceId, Rbit, SystemByte, Wbit, secs1::block::Secs1Bloc
 /// SECS-I 통신 중 사용하는 메시지 모델
 pub struct Secs1Message {
     pub header: Secs1MessageHeader,
-    pub body: Secs2Variant,
+    pub body: Option<Secs2Variant>,
 }
 
 pub struct Secs1MessageHeader {
@@ -37,7 +37,7 @@ impl From<&Secs1BlockHeader> for Secs1MessageHeader {
 }
 
 impl Secs1Message {
-    pub fn new(header: Secs1MessageHeader, body: Secs2Variant) -> Self {
+    pub fn new(header: Secs1MessageHeader, body: Option<Secs2Variant>) -> Self {
         Self { header, body }
     }
 }

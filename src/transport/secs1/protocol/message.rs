@@ -478,7 +478,7 @@ mod tests {
 
         let body = Secs2Variant::list(vec![Secs2Variant::uint4(3001), Secs2Variant::uint4(3002)]);
 
-        Secs1Message::new(header, body)
+        Secs1Message::new(header, Some(body))
     }
 
     fn build_secondary_message(
@@ -500,7 +500,7 @@ mod tests {
 
         let body = Secs2Variant::list(vec![Secs2Variant::uint8(1500), Secs2Variant::uint8(1501)]);
 
-        Secs1Message::new(header, body)
+        Secs1Message::new(header, Some(body))
     }
 
     fn build_machine() -> Secs1MessageMachine {
