@@ -38,7 +38,7 @@ pub struct Secs2Message {
     /// 응답이 필요한지 여부
     pub need_reply: bool,
     /// 메시지 본문
-    pub body: Secs2Variant,
+    pub body: Option<Secs2Variant>,
 }
 
 impl Secs2Message {
@@ -46,7 +46,7 @@ impl Secs2Message {
         stream: StreamId,
         function: FunctionId,
         need_reply: bool,
-        body: Secs2Variant,
+        body:  Option<Secs2Variant>,
     ) -> Self {
         Self {
             stream,
