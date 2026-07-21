@@ -1,0 +1,8 @@
+[package]
+name = "secs-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+secs-ii.workspace = true
+log.workspace = true
