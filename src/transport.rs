@@ -105,6 +105,16 @@ pub enum ConnectionRole {
     Passive,
 }
 
+impl ConnectionRole {
+    pub fn is_active(&self) -> bool {
+        matches!(self, ConnectionRole::Active)
+    }
+
+    pub fn is_passive(&self) -> bool {
+        matches!(self, ConnectionRole::Passive)
+    }
+}
+
 /// SECS-I 통신 시 사용되는 Device Id
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DeviceId(pub u16);

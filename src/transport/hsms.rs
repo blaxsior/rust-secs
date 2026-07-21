@@ -44,6 +44,18 @@ impl HsmsHeader {
         }
     }
 
+    /// control 메시지 생성자
+    pub fn control(byte2: u8, byte3: u8, stype: HsmsSType, system_byte: SystemByte) -> Self {
+        Self::new(
+            SessionId(0xFFFF),
+            byte2,
+            byte3,
+            HsmsPType::SECS2,
+            stype,
+            system_byte,
+        )
+    }
+
     pub fn is_data(&self) -> bool {
         self.stype.is_data()
     }
@@ -58,6 +70,11 @@ impl HsmsHeader {
 
     pub fn function(&self) -> FunctionId {
         FunctionId(self.byte3)
+    }
+
+    /// control 성공인지 여부. byte3 = 0으로 체크 가능
+    pub fn is_control_success(&self) -> bool {
+        self.is_control() && self.byte3 == 0
     }
 
     pub fn need_reply(&self) -> bool {
@@ -195,14 +212,14 @@ pub enum HsmsPType {
 #[repr(u8)]
 pub enum HsmsSType {
     DataMessage = 0,
-    SelectRequest = 1,
-    SelectResponse = 2,
-    DeselectRequest = 3,
-    DeselectResponse = 4,
-    LinktestRequest = 5,
-    LinktestResponse = 6,
-    RejectRequest = 7,
-    SeparateRequest = 9,
+    SelectReq = 1,
+    SelectRsp = 2,
+    DeselectReq = 3,
+    DeselectRsp = 4,
+    LinktestReq = 5,
+    LinktestRsp = 6,
+    RejectReq = 7,
+    SeparateReq = 9,
 }
 
 impl HsmsSType {
@@ -213,4 +230,40 @@ impl HsmsSType {
     pub fn is_control(self) -> bool {
         !self.is_data()
     }
+}
+
+/// HSMS select 상태 정보
+#[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Clone, Copy)]
+#[repr(u8)]
+pub enum HsmsSelectStatus {
+    /// select 성공
+    Success = 0,
+    /// 이미 select 상태
+    AlreadyActive = 1,
+    /// select  준비가 안됨
+    NotReady = 2,
+    /// TCP 연결 성공, 세션 연결 실패(이미 다른 엔티티와 연결된 상태)
+    ConnectionExhaust = 3,
+}
+
+/// HSMS deselect 상태 정보
+#[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Clone, Copy)]
+#[repr(u8)]
+pub enum HsmsDeselectStatus {
+    /// deselect 성공
+    CommunicationEnd = 0,
+    /// 아직 select 되지 않음
+    NotEstablished = 1,
+    /// 아직 communication 진행 중(당장 끊어야 한다면 seperate)
+    Busy = 2,
+}
+
+/// HSMS reject reason code
+#[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Clone, Copy)]
+#[repr(u8)]
+pub enum HsmsRejectReasonCode {
+    NotSupportedSType = 1,
+    NotSupportedPType = 2,
+    TransactionNotOpen = 3,
+    NotSelected = 4,
 }

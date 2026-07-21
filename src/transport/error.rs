@@ -42,7 +42,7 @@ pub enum SecsTransportError {
     #[error("unknown device id: {0:?}")]
     UnknownDeviceId(DeviceId),
 
-    #[error("invalid status")]
+    #[error("invalid state found")]
     InvalidState,
 
     #[error("no match SxFy {0:?} {1:?}")]

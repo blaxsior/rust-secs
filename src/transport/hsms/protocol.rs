@@ -16,7 +16,6 @@ use crate::transport::error::SecsTransportError;
 use crate::transport::hsms::HsmsHeader;
 use crate::transport::hsms::HsmsMessage;
 use crate::transport::hsms::config::HsmsTransportConfig;
-use crate::transport::hsms::connection::HsmsSessionManager;
 use crate::transport::hsms::protocol::assembler::HsmsAssembler;
 use crate::util::time::TimeoutManager;
 use crate::util::time::TimeoutTicket;
@@ -26,9 +25,7 @@ use crate::util::time::TimeoutTicket;
 pub struct MessageInfo(pub StreamId, pub FunctionId, pub SystemByte);
 
 /// HSMS 전송 계층 대응
-pub struct HsmsTransportMachine {
-    /// 연결 상태
-    state_manager: HsmsSessionManager,
+pub struct HsmsMessageMachine {
     /// byte to message 조립기
     msg_assembler: HsmsAssembler,
     /// serial 송신할 데이터를 임시로 보관하는 큐. poll_write
@@ -66,10 +63,9 @@ pub enum HsmsMessageEvent {
     ErrorOccured(SecsTransportError),
 }
 
-impl HsmsTransportMachine {
+impl HsmsMessageMachine {
     pub fn new(config: &HsmsTransportConfig) -> Self {
         Self {
-            state_manager: HsmsSessionManager::new(config.connection_mode),
             msg_assembler: HsmsAssembler::new(),
             outgoing_buffer: VecDeque::new(),
             outgoing_msgs: VecDeque::new(),
@@ -103,7 +99,7 @@ impl HsmsTransportMachine {
     fn process_control_msg(&mut self, msg: HsmsMessage) {}
 }
 
-impl Protocol<&[u8], HsmsMessage, HsmsMessageSignal> for HsmsTransportMachine {
+impl Protocol<&[u8], HsmsMessage, HsmsMessageSignal> for HsmsMessageMachine {
     type Rout = HsmsMessage;
     type Wout = Vec<u8>;
     type Eout = HsmsMessageEvent;
