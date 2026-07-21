@@ -173,6 +173,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "secs-runtime"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "secs-ii",
+]
+
+[[package]]
 name = "secs-transport"
 version = "0.1.0"
 dependencies = [
