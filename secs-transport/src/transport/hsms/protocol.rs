@@ -1,4 +1,7 @@
+use crate::transport::hsms::config::HsmsTransportConfig;
+
 pub mod assembler;
+pub mod connection;
 
 use alloc::collections::BTreeSet;
 use alloc::collections::VecDeque;
@@ -16,7 +19,6 @@ use crate::transport::TimeoutTicket;
 use crate::transport::error::SecsTransportError;
 use crate::transport::hsms::HsmsHeader;
 use crate::transport::hsms::HsmsMessage;
-use crate::transport::hsms::config::HsmsTransportConfig;
 use crate::transport::hsms::protocol::assembler::HsmsAssembler;
 use crate::util::time::TimeoutManager;
 

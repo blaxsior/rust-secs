@@ -28,38 +28,38 @@ impl HsmsConnectionState {
     }
 }
 
-// /// 외부에서 전달된 신호
-// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// pub enum HsmsConnSignal {
-//     /// Control 메시지 수신
-//     RecvControl(HsmsHeader),
-//     /// TCP 연결됨
-//     TcpConnected,
-//     /// TCP 연결 끊김
-//     TcpDisconnected,
-//     /// timeout 발생
-//     Timeout(SecsTimeoutUnit),
-// }
+/// 외부에서 전달된 신호
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HsmsConnSignal {
+    /// Control 메시지 수신
+    RecvControl(HsmsHeader),
+    /// TCP 연결됨
+    TcpConnected,
+    /// TCP 연결 끊김
+    TcpDisconnected,
+    /// timeout 발생
+    Timeout(SecsTimeoutUnit),
+}
 
-// /// 외부로 전달하는 요청
-// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// pub enum HsmsConnEffect {
-//     Connect,
-//     Disconnect,
-//     SendControl(HsmsHeader),
-//     StartTimeout(SecsTimeoutUnit),
-//     ClearTimeout(SecsTimeoutUnit),
-// }
+/// 외부로 전달하는 요청
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HsmsConnEffect {
+    Connect,
+    Disconnect,
+    SendControl(HsmsHeader),
+    StartTimeout(SecsTimeoutUnit),
+    ClearTimeout(SecsTimeoutUnit),
+}
 
-// /// HSMS session manager.
-// ///
-// pub struct HsmsSessionManager {
-//     state: HsmsConnectionState,
-//     role: ConnectionRole,
-//     can_reconnect: bool,
-//     /// 외부로 요구하는 요청
-//     effects: VecDeque<HsmsConnEffect>,
-// }
+/// HSMS session manager.
+///
+pub struct HsmsSessionManager {
+    state: HsmsConnectionState,
+    role: ConnectionRole,
+    can_reconnect: bool,
+    /// 외부로 요구하는 요청
+    effects: VecDeque<HsmsConnEffect>,
+}
 
 // impl HsmsSessionManager {
 //     pub fn new(role: ConnectionRole) -> Self {
@@ -146,7 +146,7 @@ impl HsmsConnectionState {
 //                     match self.role {
 //                         Active => {
 //                             // active인 경우 Select 요청 보내기 + T6 timeout 시작
-//                             self.emit(effect);
+//                             self.emit(HsmsConnEffect::SendControl(HsmsHeader::control(0, 0, HsmsSType::SelectReq, system_byte)));
 //                         }
 //                         Passive => {
 //                             // passive인 경우 T7 timeout을 시작

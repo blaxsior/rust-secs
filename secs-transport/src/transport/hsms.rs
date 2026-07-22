@@ -1,5 +1,4 @@
 pub mod config;
-pub mod connection;
 pub mod protocol;
 
 use alloc::vec::Vec;
