@@ -1,0 +1,8 @@
+[package]
+name = "secs-ii"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+num_enum = { version = "0.7.5", default-features = false }
+log.workspace = true

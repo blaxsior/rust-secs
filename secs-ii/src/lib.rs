@@ -1,0 +1,58 @@
+#![cfg_attr(not(test), no_std)]
+
+use crate::item::Secs2Variant;
+
+extern crate alloc;
+
+pub mod convert;
+pub mod error;
+pub mod item;
+
+/// SECS-II Stream Id
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct StreamId(pub u8);
+
+/// SECS-II Function Id
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FunctionId(pub u8);
+impl FunctionId {
+    pub fn is_primary(&self) -> bool {
+        self.0 & 1 == 1
+    }
+
+    pub fn is_secondary(&self) -> bool {
+        self.0 & 1 == 0
+    }
+
+    pub fn reply(&self) -> Self {
+        FunctionId(self.0 + 1)
+    }
+}
+
+/// Secs-ii Message 통신 시 사용하는 기본 메시지를 정의한다.
+pub struct Secs2Message {
+    /// SECS-II stream
+    pub stream: StreamId,
+    /// SECS-II function
+    pub function: FunctionId,
+    /// 응답이 필요한지 여부
+    pub need_reply: bool,
+    /// 메시지 본문
+    pub body: Option<Secs2Variant>,
+}
+
+impl Secs2Message {
+    pub fn new(
+        stream: StreamId,
+        function: FunctionId,
+        need_reply: bool,
+        body:  Option<Secs2Variant>,
+    ) -> Self {
+        Self {
+            stream,
+            function,
+            need_reply,
+            body,
+        }
+    }
+}
