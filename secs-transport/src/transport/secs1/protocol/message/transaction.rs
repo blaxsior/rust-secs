@@ -1,7 +1,7 @@
 ﻿use crate::transport::error::SecsTransportError;
-use crate::transport::secs1::Secs1Message;
 use crate::transport::secs1::block::Secs1Block;
 use crate::transport::secs1::convert::{decode, encode};
+use crate::transport::secs1::Secs1Message;
 use crate::transport::secs1::{block::Secs1BlockHeader, protocol::message::Secs1MessageSignal};
 use crate::transport::{SecsTimeoutUnit, TransactionKey};
 
@@ -10,7 +10,7 @@ use alloc::vec::Vec;
 use core::mem;
 use log;
 use sansio::Protocol;
-use secs_ii::{FunctionId, StreamId};
+use secs_ii::{FunctionId};
 
 #[derive(Debug)]
 pub enum Secs1TransactionState {
@@ -117,7 +117,7 @@ pub enum Secs1TransactionEffect {
     RecvComplete,
 
     /// 메시지에 대해 응답이 필요 -> TransactionKey
-    ReplyRequired(StreamId, FunctionId, TransactionKey),
+    ReplyRequired(TransactionKey),
     /// 트랜잭션 종료
     TransactionEnd,
 }
@@ -249,7 +249,7 @@ impl Secs1MessageTransaction {
 
                     if header.is_primary() && header.need_reply() {
                         // 상대방이 보낸 것에 응답이 필요한 경우 -> 종료 X, 내부적인 send 대기
-                        self.enter_wait_send(&header);
+                        self.enter_wait_send();
                     } else {
                         self.enter_end();
                     }
@@ -352,13 +352,10 @@ impl Secs1MessageTransaction {
     }
 
     /// wait send state로 진입한다.
-    fn enter_wait_send(&mut self, header: &Secs1BlockHeader) {
+    fn enter_wait_send(&mut self) {
+        // 
         self.switch_state(Secs1TransactionState::WaitSend);
-        self.emit_effect(Secs1TransactionEffect::ReplyRequired(
-            header.stream,
-            header.function.reply(),
-            self.id,
-        ));
+        self.emit_effect(Secs1TransactionEffect::ReplyRequired(self.id));
         log::debug!("[tx {:?}] enter wait send", self.id);
     }
 
@@ -578,23 +575,23 @@ mod tests {
 
     use std::collections::VecDeque;
 
-    use secs_ii::{FunctionId, StreamId, item::Secs2Variant};
+    use secs_ii::{item::Secs2Variant, FunctionId, StreamId};
 
     use crate::transport::secs1::Secs1Message;
     use crate::{
         transport::error::SecsTransportError,
         transport::{
-            DeviceId, Rbit, SecsTimeoutUnit, SystemByte, TransactionKey, TransactionOwner, Wbit,
             secs1::{
-                Secs1MessageHeader,
                 convert::encode,
                 protocol::message::{
-                    Secs1MessageSignal,
                     transaction::{
                         Secs1MessageTransaction, Secs1TransactionEffect, Secs1TransactionState,
                     },
+                    Secs1MessageSignal,
                 },
+                Secs1MessageHeader,
             },
+            DeviceId, Rbit, SecsTimeoutUnit, SystemByte, TransactionKey, TransactionOwner, Wbit,
         },
     };
     use sansio::Protocol;
@@ -879,11 +876,7 @@ mod tests {
         let effects = drain_effects(&mut transaction);
 
         assert!(effects.contains(&Secs1TransactionEffect::RecvComplete));
-        assert!(effects.contains(&Secs1TransactionEffect::ReplyRequired(
-            stream,
-            function.reply(),
-            key,
-        )));
+        assert!(effects.contains(&Secs1TransactionEffect::ReplyRequired(key,)));
         // 트랜잭션 종료 판정 X. 대기 필요
         assert!(!effects.contains(&Secs1TransactionEffect::TransactionEnd));
 
@@ -941,11 +934,9 @@ mod tests {
         assert!(effects.contains(&Secs1TransactionEffect::RecvComplete));
         assert!(effects.contains(&Secs1TransactionEffect::TransactionEnd));
         // reply 모드 전이 X
-        assert!(
-            !effects
-                .iter()
-                .any(|effect| { matches!(effect, Secs1TransactionEffect::ReplyRequired(..)) })
-        );
+        assert!(!effects
+            .iter()
+            .any(|effect| { matches!(effect, Secs1TransactionEffect::ReplyRequired(..)) }));
 
         assert!(matches!(transaction.state, Secs1TransactionState::End));
     }

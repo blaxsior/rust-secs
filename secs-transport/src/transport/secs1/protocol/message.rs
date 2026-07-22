@@ -16,13 +16,9 @@ use crate::{
     util::time::TimeoutManager,
 };
 
-use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use sansio::Protocol;
-
-use secs_ii::FunctionId;
-use secs_ii::StreamId;
 
 pub mod transaction;
 pub mod transaction_manager;
@@ -38,23 +34,14 @@ pub enum Secs1MessageSignal {
 /// secs-i message protocol 수행 중 발생하는 이벤트
 pub enum Secs1MessageEvent {
     /// 메시지를 성공적으로 송신
-    SendComplete {
-        transaction_key: TransactionKey,
-    },
+    SendComplete(TransactionKey),
     /// 메시지를 성공적으로 수신
-    RecvComplete {
-        transaction_key: TransactionKey,
-    },
+    RecvComplete(TransactionKey),
 
-    TransactionEnd {
-        transaction_key: TransactionKey,
-    },
+    TransactionEnd(TransactionKey),
 
     /// 메시지 송수신 중 타임아웃 발생
-    MessageTimeout {
-        transaction_key: TransactionKey,
-        timeout_unit: SecsTimeoutUnit,
-    },
+    MessageTimeout(TransactionKey, SecsTimeoutUnit),
     /// 비정상적인 상태 전이 등 에러가 발생한 경우
     ErrorOccured(SecsTransportError),
 }
@@ -73,17 +60,9 @@ pub struct Secs1MessageMachine {
     timeout_manager: TimeoutManager,
     /// 통신 중인 디바이스의 ID
     device_id: DeviceId,
-
-    /// reply 메시지에 대한 transaction ID - key mapping
-    reply_map: BTreeMap<ReplyMsgKey, TransactionKey>,
-
     /// 트랜잭션 관리 구조체
     transaction_manager: Secs1TransactionManager,
 }
-
-/// 상대방 요청에 응답하기 위한 트랜잭션 식별 키
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
-struct ReplyMsgKey(StreamId, FunctionId);
 
 impl Secs1MessageMachine {
     pub fn new(config: &Secs1TransportConfig) -> Self {
@@ -95,7 +74,6 @@ impl Secs1MessageMachine {
             outgoing_events: VecDeque::new(),
             timeout_manager: TimeoutManager::new(),
             device_id: config.device_id,
-            reply_map: BTreeMap::new(),
             transaction_manager: Secs1TransactionManager::new(),
         }
     }
@@ -122,14 +100,6 @@ impl Secs1MessageMachine {
     fn write_block(&mut self, block: Secs1Block) {
         log::debug!("[message] queue block {:?}", block.header);
         self.outgoing_blocks.push_back(block);
-    }
-
-    fn take_reply_transaction_key(
-        &mut self,
-        stream: StreamId,
-        function: FunctionId,
-    ) -> Option<TransactionKey> {
-        self.reply_map.remove(&ReplyMsgKey(stream, function))
     }
 
     /// header로부터 recv transaction_key를 획득
@@ -202,7 +172,7 @@ impl Secs1MessageMachine {
             msg.header.system_byte
         );
         // 1.  SxFy, y&1 == 0인 경우 -> 기존 프로세스 참조
-        let stream = msg.header.stream;
+        // let stream = msg.header.stream;
         let function = msg.header.function;
         let system_byte = msg.header.system_byte;
 
@@ -227,21 +197,7 @@ impl Secs1MessageMachine {
             self.handle_transaction_outputs(outputs, &transaction_key);
         } else {
             // 상대 request 받고 대응되는 메시지 보내는 상황
-            let transaction_key = match self.take_reply_transaction_key(stream, function) {
-                Some(key) => key,
-                None => {
-                    log::warn!(
-                        "[message] no reply transaction for stream={:?}, function={:?}",
-                        stream,
-                        function
-                    );
-                    self.emit_event(Secs1MessageEvent::ErrorOccured(
-                        SecsTransportError::NoMatchReplyTransaction(stream, function),
-                    ));
-                    return;
-                }
-            };
-
+            let transaction_key = TransactionKey::from(TransferContext::Send, false, system_byte);
             let transaction = match self.transaction_manager.find(&transaction_key) {
                 Some(t) => t,
                 None => {
@@ -304,31 +260,24 @@ impl Secs1MessageMachine {
                 }
                 Secs1TransactionEffect::ErrorOccured(error) => {
                     if let SecsTransportError::Timeout(timeout_unit) = error {
-                        self.emit_event(Secs1MessageEvent::MessageTimeout {
-                            transaction_key: *transaction_key,
+                        self.emit_event(Secs1MessageEvent::MessageTimeout(
+                            *transaction_key,
                             timeout_unit,
-                        });
+                        ));
                     } else {
                         self.emit_event(Secs1MessageEvent::ErrorOccured(error));
                     }
                 }
                 Secs1TransactionEffect::RecvComplete => {
-                    self.emit_event(Secs1MessageEvent::RecvComplete {
-                        transaction_key: *transaction_key,
-                    })
+                    self.emit_event(Secs1MessageEvent::RecvComplete(*transaction_key));
                 }
                 Secs1TransactionEffect::SendComplete => {
-                    self.emit_event(Secs1MessageEvent::SendComplete {
-                        transaction_key: *transaction_key,
-                    });
+                    self.emit_event(Secs1MessageEvent::SendComplete(*transaction_key));
                 }
                 Secs1TransactionEffect::TransactionEnd => {
                     self.transaction_manager.remove(transaction_key);
                 }
-                Secs1TransactionEffect::ReplyRequired(stream, function, key) => {
-                    let reply_key = ReplyMsgKey(stream, function);
-                    self.reply_map.insert(reply_key, key);
-                }
+                Secs1TransactionEffect::ReplyRequired(key) => {}
             }
         }
     }
@@ -564,9 +513,9 @@ mod tests {
         assert!(events.iter().any(|event| {
             matches!(
                 event,
-                Secs1MessageEvent::SendComplete {
+                Secs1MessageEvent::SendComplete(
                     transaction_key
-                } if *transaction_key == expected_key
+                ) if *transaction_key == expected_key
             )
         }));
         assert_eq!(
@@ -587,9 +536,9 @@ mod tests {
         assert!(events.iter().any(|event| {
             matches!(
                 event,
-                Secs1MessageEvent::RecvComplete {
+                Secs1MessageEvent::RecvComplete(
                     transaction_key
-                } if *transaction_key == expected_key
+                )if *transaction_key == expected_key
             )
         }));
         assert!(machine.poll_timeout().is_none());
@@ -618,9 +567,9 @@ mod tests {
         assert!(events.iter().any(|event| {
             matches!(
                 event,
-                Secs1MessageEvent::SendComplete {
+                Secs1MessageEvent::SendComplete (
                     transaction_key
-                } if *transaction_key == expected_key
+                 ) if *transaction_key == expected_key
             )
         }));
         assert!(machine.poll_timeout().is_none());
@@ -656,9 +605,9 @@ mod tests {
         assert!(!events.is_empty());
         assert!(events.iter().any(|event| matches!(
             event,
-            Secs1MessageEvent::SendComplete {
+            Secs1MessageEvent::SendComplete (
                 transaction_key
-            } if *transaction_key == expected_key
+             ) if *transaction_key == expected_key
         )));
 
         // timeout 처리
@@ -668,10 +617,10 @@ mod tests {
         // timeout 발생했다고 알림
         assert!(events.iter().any(|it| matches!(
             it,
-            Secs1MessageEvent::MessageTimeout {
+            Secs1MessageEvent::MessageTimeout (
                 transaction_key,
-                timeout_unit: SecsTimeoutUnit::T3(_)
-            } if *transaction_key == expected_key
+                SecsTimeoutUnit::T3(_)
+            ) if *transaction_key == expected_key
         )));
     }
 
@@ -690,9 +639,9 @@ mod tests {
         assert!(!events.is_empty());
         assert!(events.iter().any(|event| matches!(
             event,
-            Secs1MessageEvent::RecvComplete {
+            Secs1MessageEvent::RecvComplete (
                 transaction_key
-            } if *transaction_key == expected_key
+             ) if *transaction_key == expected_key
         )));
         assert!(machine.poll_timeout().is_none());
 
@@ -710,9 +659,9 @@ mod tests {
         let events = drain_events(&mut machine);
         assert!(events.iter().any(|it| matches!(
             it,
-            Secs1MessageEvent::SendComplete {
+            Secs1MessageEvent::SendComplete(
                 transaction_key
-            } if *transaction_key == expected_key
+             ) if *transaction_key == expected_key
         )));
         assert!(machine.poll_timeout().is_none());
     }
