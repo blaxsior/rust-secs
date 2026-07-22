@@ -8,12 +8,12 @@ pub mod message;
 pub mod secs2;
 
 pub use crate::core::{
-    ByteDataSource, CorrelationId, CorrelationIdSource, RuntimeMessage, RuntimeTimer,
-};
-pub use crate::message::{
-    MessageMachine, MessageRuntime, MessageRuntimeEvent, MessageRuntimeTick, RuntimeError,
+    ByteDataSource, ConnectionRole, DeviceId, MachineError, MachineEvent, MachineSignal,
+    MessageMachine, RuntimeError, RuntimeMessage, RuntimeTimeout, RuntimeTimer, SessionId,
+    SystemByte, SystemByteSource, TimeoutTicket, TransactionKey, TransactionOwner, TransferContext,
 };
 pub use crate::machine::{SecsMachine, SecsMachineError};
+pub use crate::message::{MessageRuntime, MessageRuntimeEvent, MessageRuntimeTick};
 pub use crate::secs2::{
     CallToken, ExchangeTracker, IgnoreUnknownPrimary, PendingCall, Secs2DefaultHandler,
     Secs2MessageHandler, Secs2MessageLayer, Secs2PrimaryHandler, Secs2RequestContext, Secs2Route,

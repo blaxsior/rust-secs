@@ -1,15 +1,18 @@
 use secs_ii::Secs2Message;
 
-use crate::core::{ByteDataSource, CorrelationIdSource, RuntimeTimer};
-use crate::message::{MessageMachine, MessageRuntime, MessageRuntimeTick, RuntimeError};
+use crate::core::{
+    ByteDataSource, MachineError, MachineSignal, MessageMachine, RuntimeError, RuntimeTimer,
+    SystemByteSource,
+};
+use crate::message::{MessageRuntime, MessageRuntimeTick};
 use crate::secs2::{
     CallToken, Secs2MessageHandler, Secs2MessageLayer, Secs2Runtime, Secs2RuntimeError,
     Secs2RuntimeEvent,
 };
 
-pub enum SecsMachineError<D, M, T, H> {
-    Runtime(RuntimeError<D, M, T>),
-    Secs2(Secs2RuntimeError<M, H>),
+pub enum SecsMachineError<D, T, H> {
+    Runtime(RuntimeError<D, MachineError, T>),
+    Secs2(Secs2RuntimeError<MachineError, H>),
 }
 
 pub struct SecsMachine<D, M, T, C, H> {
@@ -18,9 +21,9 @@ pub struct SecsMachine<D, M, T, C, H> {
 }
 
 impl<D, M, T, C, H> SecsMachine<D, M, T, C, H> {
-    pub fn new(datasource: D, machine: M, timer: T, correlation_ids: C, handler: H) -> Self {
+    pub fn new(datasource: D, machine: M, timer: T, system_bytes: C, handler: H) -> Self {
         let lower = MessageRuntime::new(datasource, machine, timer);
-        let runtime = Secs2Runtime::new(lower, correlation_ids);
+        let runtime = Secs2Runtime::new(lower, system_bytes);
 
         Self { runtime, handler }
     }
@@ -50,11 +53,9 @@ impl<D, M, T, C, H> SecsMachine<D, M, T, C, H>
 where
     D: ByteDataSource,
     M: MessageMachine,
-    T: RuntimeTimer<Timeout = M::Timeout, Ticket = M::TimeoutTicket>,
+    T: RuntimeTimer,
 {
-    pub fn start(
-        &mut self,
-    ) -> Result<(), SecsMachineError<D::Error, M::Error, T::Error, H::Error>>
+    pub fn start(&mut self) -> Result<(), SecsMachineError<D::Error, T::Error, H::Error>>
     where
         H: Secs2MessageHandler,
     {
@@ -68,13 +69,27 @@ where
     pub fn tick(
         &mut self,
         read_buf: &mut [u8],
-    ) -> Result<MessageRuntimeTick, SecsMachineError<D::Error, M::Error, T::Error, H::Error>>
+    ) -> Result<MessageRuntimeTick, SecsMachineError<D::Error, T::Error, H::Error>>
     where
         H: Secs2MessageHandler,
     {
         self.runtime
             .lower_mut()
             .tick(read_buf)
+            .map_err(SecsMachineError::Runtime)
+    }
+
+    pub fn signal(
+        &mut self,
+        signal: MachineSignal,
+    ) -> Result<(), SecsMachineError<D::Error, T::Error, H::Error>>
+    where
+        H: Secs2MessageHandler,
+    {
+        self.runtime
+            .lower_mut()
+            .signal(signal)
+            .map_err(RuntimeError::Machine)
             .map_err(SecsMachineError::Runtime)
     }
 }
@@ -84,14 +99,14 @@ where
     D: ByteDataSource,
     M: MessageMachine,
     T: RuntimeTimer,
-    C: CorrelationIdSource,
+    C: SystemByteSource,
     H: Secs2MessageHandler,
-    MessageRuntime<D, M, T>: Secs2MessageLayer<Error = M::Error, Event = M::Event>,
+    MessageRuntime<D, M, T>: Secs2MessageLayer,
 {
     pub fn start_call(
         &mut self,
         primary: Secs2Message,
-    ) -> Result<CallToken, SecsMachineError<D::Error, M::Error, T::Error, H::Error>> {
+    ) -> Result<CallToken, SecsMachineError<D::Error, T::Error, H::Error>> {
         self.runtime
             .start_call(primary)
             .map_err(Secs2RuntimeError::Lower)
@@ -101,7 +116,7 @@ where
     pub fn poll_call(
         &mut self,
         token: CallToken,
-    ) -> Result<Option<Secs2Message>, SecsMachineError<D::Error, M::Error, T::Error, H::Error>> {
+    ) -> Result<Option<Secs2Message>, SecsMachineError<D::Error, T::Error, H::Error>> {
         self.runtime
             .poll_call(token, &mut self.handler)
             .map_err(SecsMachineError::Secs2)
@@ -110,7 +125,7 @@ where
     pub fn call(
         &mut self,
         primary: Secs2Message,
-    ) -> Result<Option<Secs2Message>, SecsMachineError<D::Error, M::Error, T::Error, H::Error>> {
+    ) -> Result<Option<Secs2Message>, SecsMachineError<D::Error, T::Error, H::Error>> {
         self.runtime
             .call(primary, &mut self.handler)
             .map_err(SecsMachineError::Secs2)
@@ -118,8 +133,7 @@ where
 
     pub fn handle(
         &mut self,
-    ) -> Result<Option<Secs2RuntimeEvent<M::Event>>, SecsMachineError<D::Error, M::Error, T::Error, H::Error>>
-    {
+    ) -> Result<Option<Secs2RuntimeEvent>, SecsMachineError<D::Error, T::Error, H::Error>> {
         self.runtime
             .handle(&mut self.handler)
             .map_err(SecsMachineError::Secs2)
@@ -127,8 +141,7 @@ where
 
     pub fn poll_event(
         &mut self,
-    ) -> Result<Option<Secs2RuntimeEvent<M::Event>>, SecsMachineError<D::Error, M::Error, T::Error, H::Error>>
-    {
+    ) -> Result<Option<Secs2RuntimeEvent>, SecsMachineError<D::Error, T::Error, H::Error>> {
         self.runtime
             .poll_event(&mut self.handler)
             .map_err(SecsMachineError::Secs2)

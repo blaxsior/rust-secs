@@ -7,6 +7,7 @@ edition = "2024"
 num_enum = "0.7.5"
 sansio = "1.0.1"
 enumset = "1.1.13"
+secs-common.workspace = true
 secs-ii.workspace = true
 thiserror.workspace = true
 log.workspace = true

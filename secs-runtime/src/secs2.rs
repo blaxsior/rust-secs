@@ -5,24 +5,27 @@ use alloc::vec::Vec;
 use secs_ii::item::Secs2Variant;
 use secs_ii::{FunctionId, Secs2Message, StreamId};
 
-use crate::core::{CorrelationId, CorrelationIdSource, RuntimeMessage};
-use crate::message::{MessageMachine, MessageRuntime, MessageRuntimeEvent};
+use crate::core::{
+    MachineError, MachineEvent, MessageMachine, RuntimeMessage, SystemByteSource, TransactionKey,
+    TransactionOwner,
+};
+use crate::message::{MessageRuntime, MessageRuntimeEvent};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CallToken {
-    pub correlation_id: CorrelationId,
+    pub transaction_key: TransactionKey,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PendingCall {
-    pub correlation_id: CorrelationId,
+    pub transaction_key: TransactionKey,
     pub stream: StreamId,
     pub function: FunctionId,
 }
 
 #[derive(Debug, Default)]
 pub struct ExchangeTracker {
-    pending_calls: BTreeMap<CorrelationId, PendingCall>,
+    pending_calls: BTreeMap<TransactionKey, PendingCall>,
 }
 
 impl ExchangeTracker {
@@ -34,14 +37,14 @@ impl ExchangeTracker {
 
     pub fn track_call(&mut self, msg: &RuntimeMessage) -> CallToken {
         let call = PendingCall {
-            correlation_id: msg.correlation_id,
+            transaction_key: msg.transaction_key,
             stream: msg.stream(),
             function: msg.function(),
         };
-        self.pending_calls.insert(msg.correlation_id, call);
+        self.pending_calls.insert(msg.transaction_key, call);
 
         CallToken {
-            correlation_id: msg.correlation_id,
+            transaction_key: msg.transaction_key,
         }
     }
 
@@ -50,22 +53,25 @@ impl ExchangeTracker {
             return None;
         }
 
-        self.pending_calls.remove(&msg.correlation_id)
+        self.pending_calls.remove(&msg.transaction_key)
     }
 
     pub fn is_reply_for(&self, token: CallToken, msg: &RuntimeMessage) -> bool {
-        msg.is_secondary() && msg.correlation_id == token.correlation_id
+        msg.is_secondary() && msg.transaction_key == token.transaction_key
     }
 
-    pub fn has_pending(&self, correlation_id: CorrelationId) -> bool {
-        self.pending_calls.contains_key(&correlation_id)
+    pub fn has_pending(&self, transaction_key: TransactionKey) -> bool {
+        self.pending_calls.contains_key(&transaction_key)
     }
 }
 
 pub trait Secs2MessageHandler {
     type Error;
 
-    fn handle_primary(&mut self, primary: Secs2Message) -> Result<Option<Secs2Message>, Self::Error>;
+    fn handle_primary(
+        &mut self,
+        primary: Secs2Message,
+    ) -> Result<Option<Secs2Message>, Self::Error>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -226,14 +232,17 @@ impl Secs2Router<()> {
 impl<E> Secs2MessageHandler for Secs2Router<E> {
     type Error = E;
 
-    fn handle_primary(&mut self, primary: Secs2Message) -> Result<Option<Secs2Message>, Self::Error> {
+    fn handle_primary(
+        &mut self,
+        primary: Secs2Message,
+    ) -> Result<Option<Secs2Message>, Self::Error> {
         let ctx = Secs2RequestContext::new(&primary);
         self.handle_with_context(ctx, primary)
     }
 }
 
-pub enum Secs2RuntimeEvent<E> {
-    Machine(E),
+pub enum Secs2RuntimeEvent {
+    Machine(MachineEvent),
     Primary(RuntimeMessage),
     Reply(RuntimeMessage),
 }
@@ -245,24 +254,18 @@ pub enum Secs2RuntimeError<L, H> {
 }
 
 pub trait Secs2MessageLayer {
-    type Error;
-    type Event;
-
-    fn send(&mut self, msg: RuntimeMessage) -> Result<(), Self::Error>;
+    fn send(&mut self, msg: RuntimeMessage) -> Result<(), MachineError>;
 
     fn recv(&mut self) -> Option<RuntimeMessage>;
 
-    fn poll_event(&mut self) -> Option<MessageRuntimeEvent<Self::Event>>;
+    fn poll_event(&mut self) -> Option<MessageRuntimeEvent>;
 }
 
 impl<D, M, T> Secs2MessageLayer for MessageRuntime<D, M, T>
 where
     M: MessageMachine,
 {
-    type Error = M::Error;
-    type Event = M::Event;
-
-    fn send(&mut self, msg: RuntimeMessage) -> Result<(), Self::Error> {
+    fn send(&mut self, msg: RuntimeMessage) -> Result<(), MachineError> {
         MessageRuntime::send(self, msg)
     }
 
@@ -270,22 +273,22 @@ where
         MessageRuntime::recv(self)
     }
 
-    fn poll_event(&mut self) -> Option<MessageRuntimeEvent<Self::Event>> {
+    fn poll_event(&mut self) -> Option<MessageRuntimeEvent> {
         MessageRuntime::poll_event(self)
     }
 }
 
 pub struct Secs2Runtime<L, C> {
     lower: L,
-    correlation_ids: C,
+    system_bytes: C,
     exchanges: ExchangeTracker,
 }
 
 impl<L, C> Secs2Runtime<L, C> {
-    pub fn new(lower: L, correlation_ids: C) -> Self {
+    pub fn new(lower: L, system_bytes: C) -> Self {
         Self {
             lower,
-            correlation_ids,
+            system_bytes,
             exchanges: ExchangeTracker::new(),
         }
     }
@@ -305,19 +308,23 @@ impl<L, C> Secs2Runtime<L, C> {
 
 impl<L, C> Secs2Runtime<L, C>
 where
-    C: CorrelationIdSource,
+    C: SystemByteSource,
 {
     pub fn make_primary(&mut self, payload: Secs2Message) -> RuntimeMessage {
-        RuntimeMessage::new(self.correlation_ids.next_correlation_id(), payload)
+        let key = TransactionKey::new(
+            TransactionOwner::Local,
+            self.system_bytes.next_system_byte(),
+        );
+        RuntimeMessage::new(key, payload)
     }
 }
 
 impl<L, C> Secs2Runtime<L, C>
 where
     L: Secs2MessageLayer,
-    C: CorrelationIdSource,
+    C: SystemByteSource,
 {
-    pub fn start_call(&mut self, primary: Secs2Message) -> Result<CallToken, L::Error> {
+    pub fn start_call(&mut self, primary: Secs2Message) -> Result<CallToken, MachineError> {
         let msg = self.make_primary(primary);
         let token = self.exchanges.track_call(&msg);
         self.lower.send(msg)?;
@@ -328,7 +335,7 @@ where
         &mut self,
         token: CallToken,
         handler: &mut H,
-    ) -> Result<Option<Secs2Message>, Secs2RuntimeError<L::Error, H::Error>>
+    ) -> Result<Option<Secs2Message>, Secs2RuntimeError<MachineError, H::Error>>
     where
         H: Secs2MessageHandler,
     {
@@ -337,7 +344,7 @@ where
         };
 
         match event {
-            Secs2RuntimeEvent::Reply(msg) if msg.correlation_id == token.correlation_id => {
+            Secs2RuntimeEvent::Reply(msg) if msg.transaction_key == token.transaction_key => {
                 Ok(Some(msg.into_payload()))
             }
             _ => Ok(None),
@@ -348,7 +355,7 @@ where
         &mut self,
         primary: Secs2Message,
         handler: &mut H,
-    ) -> Result<Option<Secs2Message>, Secs2RuntimeError<L::Error, H::Error>>
+    ) -> Result<Option<Secs2Message>, Secs2RuntimeError<MachineError, H::Error>>
     where
         H: Secs2MessageHandler,
     {
@@ -359,7 +366,7 @@ where
     pub fn handle<H>(
         &mut self,
         handler: &mut H,
-    ) -> Result<Option<Secs2RuntimeEvent<L::Event>>, Secs2RuntimeError<L::Error, H::Error>>
+    ) -> Result<Option<Secs2RuntimeEvent>, Secs2RuntimeError<MachineError, H::Error>>
     where
         H: Secs2MessageHandler,
     {
@@ -369,7 +376,7 @@ where
     pub fn poll_event<H>(
         &mut self,
         handler: &mut H,
-    ) -> Result<Option<Secs2RuntimeEvent<L::Event>>, Secs2RuntimeError<L::Error, H::Error>>
+    ) -> Result<Option<Secs2RuntimeEvent>, Secs2RuntimeError<MachineError, H::Error>>
     where
         H: Secs2MessageHandler,
     {
@@ -387,14 +394,14 @@ where
                 Ok(Some(Secs2RuntimeEvent::Reply(msg)))
             }
             MessageRuntimeEvent::Message(msg) => {
-                let correlation_id = msg.correlation_id;
+                let transaction_key = msg.transaction_key;
                 let reply = handler
                     .handle_primary(msg.into_payload())
                     .map_err(Secs2RuntimeError::Handler)?;
 
                 if let Some(reply) = reply {
                     self.lower
-                        .send(RuntimeMessage::new(correlation_id, reply))
+                        .send(RuntimeMessage::new(transaction_key, reply))
                         .map_err(Secs2RuntimeError::Lower)?;
                 }
 

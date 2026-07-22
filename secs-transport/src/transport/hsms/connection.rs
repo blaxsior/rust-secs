@@ -75,7 +75,7 @@ impl HsmsConnectionState {
 //     pub fn connect(&mut self) {}
 
 //     pub fn select(&mut self) -> Result<(), SecsTransportError> {
-//         if 
+//         if
 //         // select response 반환
 //         let select_rsp = HsmsHeader::control(
 //             0,

@@ -1,42 +1,17 @@
-use alloc::vec::Vec;
+use crate::core::{
+    ByteDataSource, MachineError, MachineEvent, MachineSignal, MessageMachine, RuntimeError,
+    RuntimeMessage, RuntimeTimer,
+};
 
-use crate::core::{ByteDataSource, RuntimeMessage, RuntimeTimer};
-
-pub trait MessageMachine {
-    type Error;
-    type Event;
-    type Timeout;
-    type TimeoutTicket;
-
-    fn handle_read_bytes(&mut self, bytes: &[u8]) -> Result<(), Self::Error>;
-
-    fn handle_write_message(&mut self, msg: RuntimeMessage) -> Result<(), Self::Error>;
-
-    fn handle_timeout(&mut self, ticket: Self::TimeoutTicket) -> Result<(), Self::Error>;
-
-    fn poll_read_message(&mut self) -> Option<RuntimeMessage>;
-
-    fn poll_write_bytes(&mut self) -> Option<Vec<u8>>;
-
-    fn poll_event(&mut self) -> Option<Self::Event>;
-
-    fn poll_timeout(&mut self) -> Option<Self::Timeout>;
-}
-
-pub enum MessageRuntimeEvent<E> {
-    Machine(E),
+pub enum MessageRuntimeEvent {
+    Machine(MachineEvent),
     Message(RuntimeMessage),
-}
-
-pub enum RuntimeError<D, M, T> {
-    DataSource(D),
-    Machine(M),
-    Timer(T),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MessageRuntimeTick {
     pub timeout_count: usize,
+    pub machine_event_count: usize,
     pub read_bytes: usize,
     pub write_count: usize,
     pub timeout_request_count: usize,
@@ -45,6 +20,7 @@ pub struct MessageRuntimeTick {
 impl MessageRuntimeTick {
     pub fn did_work(&self) -> bool {
         self.timeout_count > 0
+            || self.machine_event_count > 0
             || self.read_bytes > 0
             || self.write_count > 0
             || self.timeout_request_count > 0
@@ -95,20 +71,26 @@ impl<D, M, T> MessageRuntime<D, M, T>
 where
     M: MessageMachine,
 {
-    pub fn send(&mut self, msg: RuntimeMessage) -> Result<(), M::Error> {
+    pub fn send(&mut self, msg: RuntimeMessage) -> Result<(), MachineError> {
         self.machine.handle_write_message(msg)
+    }
+
+    pub fn signal(&mut self, signal: MachineSignal) -> Result<(), MachineError> {
+        self.machine.handle_signal(signal)
     }
 
     pub fn recv(&mut self) -> Option<RuntimeMessage> {
         self.machine.poll_read_message()
     }
 
-    pub fn poll_event(&mut self) -> Option<MessageRuntimeEvent<M::Event>> {
+    pub fn poll_event(&mut self) -> Option<MessageRuntimeEvent> {
         if let Some(event) = self.machine.poll_event() {
             return Some(MessageRuntimeEvent::Machine(event));
         }
 
-        self.machine.poll_read_message().map(MessageRuntimeEvent::Message)
+        self.machine
+            .poll_read_message()
+            .map(MessageRuntimeEvent::Message)
     }
 }
 
@@ -117,14 +99,60 @@ where
     D: ByteDataSource,
     M: MessageMachine,
 {
-    pub fn read_once(
+    pub fn process_machine_event_once(
         &mut self,
-        buf: &mut [u8],
-    ) -> Result<usize, RuntimeError<D::Error, M::Error, T::Error>>
+    ) -> Result<bool, RuntimeError<D::Error, MachineError, T::Error>>
     where
         T: RuntimeTimer,
     {
-        let len = self.datasource.read(buf).map_err(RuntimeError::DataSource)?;
+        let Some(event) = self.machine.poll_event() else {
+            return Ok(false);
+        };
+
+        match event {
+            MachineEvent::LinkOpenRequested => {
+                self.datasource.open().map_err(RuntimeError::DataSource)?;
+                self.machine
+                    .handle_signal(MachineSignal::LinkOpened)
+                    .map_err(RuntimeError::Machine)?;
+            }
+            MachineEvent::LinkCloseRequested => {
+                self.datasource.close().map_err(RuntimeError::DataSource)?;
+                self.machine
+                    .handle_signal(MachineSignal::LinkClosed)
+                    .map_err(RuntimeError::Machine)?;
+            }
+        }
+
+        Ok(true)
+    }
+
+    fn process_machine_events(
+        &mut self,
+    ) -> Result<usize, RuntimeError<D::Error, MachineError, T::Error>>
+    where
+        T: RuntimeTimer,
+    {
+        let mut count = 0;
+
+        while self.process_machine_event_once()? {
+            count += 1;
+        }
+
+        Ok(count)
+    }
+
+    pub fn read_once(
+        &mut self,
+        buf: &mut [u8],
+    ) -> Result<usize, RuntimeError<D::Error, MachineError, T::Error>>
+    where
+        T: RuntimeTimer,
+    {
+        let len = self
+            .datasource
+            .read(buf)
+            .map_err(RuntimeError::DataSource)?;
 
         if len > 0 {
             self.machine
@@ -135,7 +163,7 @@ where
         Ok(len)
     }
 
-    pub fn flush_writes(&mut self) -> Result<(), RuntimeError<D::Error, M::Error, T::Error>>
+    pub fn flush_writes(&mut self) -> Result<(), RuntimeError<D::Error, MachineError, T::Error>>
     where
         T: RuntimeTimer,
     {
@@ -150,7 +178,7 @@ where
 
     fn flush_writes_count(
         &mut self,
-    ) -> Result<usize, RuntimeError<D::Error, M::Error, T::Error>>
+    ) -> Result<usize, RuntimeError<D::Error, MachineError, T::Error>>
     where
         T: RuntimeTimer,
     {
@@ -170,7 +198,7 @@ where
 impl<D, M, T> MessageRuntime<D, M, T>
 where
     M: MessageMachine,
-    T: RuntimeTimer<Timeout = M::Timeout, Ticket = M::TimeoutTicket>,
+    T: RuntimeTimer,
 {
     pub fn arm_machine_timeouts(&mut self) -> Result<(), T::Error> {
         while let Some(timeout) = self.machine.poll_timeout() {
@@ -191,7 +219,9 @@ where
         Ok(count)
     }
 
-    pub fn process_timer_once(&mut self) -> Result<(), RuntimeError<D::Error, M::Error, T::Error>>
+    pub fn process_timer_once(
+        &mut self,
+    ) -> Result<(), RuntimeError<D::Error, MachineError, T::Error>>
     where
         D: ByteDataSource,
     {
@@ -204,7 +234,9 @@ where
             .map_err(RuntimeError::Machine)
     }
 
-    fn process_timer_events(&mut self) -> Result<usize, RuntimeError<D::Error, M::Error, T::Error>>
+    fn process_timer_events(
+        &mut self,
+    ) -> Result<usize, RuntimeError<D::Error, MachineError, T::Error>>
     where
         D: ByteDataSource,
     {
@@ -225,25 +257,28 @@ impl<D, M, T> MessageRuntime<D, M, T>
 where
     D: ByteDataSource,
     M: MessageMachine,
-    T: RuntimeTimer<Timeout = M::Timeout, Ticket = M::TimeoutTicket>,
+    T: RuntimeTimer,
 {
     pub fn tick(
         &mut self,
         read_buf: &mut [u8],
-    ) -> Result<MessageRuntimeTick, RuntimeError<D::Error, M::Error, T::Error>> {
+    ) -> Result<MessageRuntimeTick, RuntimeError<D::Error, MachineError, T::Error>> {
         let mut report = MessageRuntimeTick::default();
 
         report.timeout_count += self.process_timer_events()?;
+        report.machine_event_count += self.process_machine_events()?;
         report.timeout_request_count += self
             .arm_machine_timeouts_count()
             .map_err(RuntimeError::Timer)?;
 
         report.read_bytes += self.read_once(read_buf)?;
+        report.machine_event_count += self.process_machine_events()?;
         report.timeout_request_count += self
             .arm_machine_timeouts_count()
             .map_err(RuntimeError::Timer)?;
 
         report.write_count += self.flush_writes_count()?;
+        report.machine_event_count += self.process_machine_events()?;
         report.timeout_request_count += self
             .arm_machine_timeouts_count()
             .map_err(RuntimeError::Timer)?;
@@ -255,13 +290,14 @@ where
         &mut self,
         read_buf: &mut [u8],
         max_ticks: usize,
-    ) -> Result<MessageRuntimeTick, RuntimeError<D::Error, M::Error, T::Error>> {
+    ) -> Result<MessageRuntimeTick, RuntimeError<D::Error, MachineError, T::Error>> {
         let mut total = MessageRuntimeTick::default();
 
         for _ in 0..max_ticks {
             let tick = self.tick(read_buf)?;
 
             total.timeout_count += tick.timeout_count;
+            total.machine_event_count += tick.machine_event_count;
             total.read_bytes += tick.read_bytes;
             total.write_count += tick.write_count;
             total.timeout_request_count += tick.timeout_request_count;

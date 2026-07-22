@@ -1,12 +1,16 @@
 [workspace]
 members = [
+    "secs-common",
     "secs-ii", 
+    "secs-runtime-core",
     "secs-runtime",
     "secs-transport",
 ]
 resolver = "3"
 [workspace.dependencies]
+secs-common = { path = "secs-common" }
 secs-ii = { path = "secs-ii" }
+secs-runtime-core = { path = "secs-runtime-core" }
 secs-runtime = { path = "secs-runtime" }
 secs-transport = { path = "secs-transport" }
 
