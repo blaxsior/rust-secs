@@ -77,7 +77,7 @@ impl TryFrom<&[u8]> for Secs1Block {
         if body_len < MIN_BLOCK_BODY_LEN || body_len > MAX_BLOCK_BODY_LEN {
             return Err(SecsTransportError::InvalidBlockLength(body_len));
         }
-        
+
         let expected_wire_len = LENGTH_LEN + body_len + CHECKSUM_LEN;
         if value.len() != expected_wire_len {
             return Err(SecsTransportError::InvalidBlockLength(value.len()));

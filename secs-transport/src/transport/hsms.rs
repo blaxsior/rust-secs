@@ -112,28 +112,22 @@ impl TryFrom<[u8; 10]> for HsmsHeader {
 
 /// HSMS Message
 #[derive(Debug)]
-pub enum HsmsMessage {
-    Message {
-        header: HsmsHeader,
-        payload: Option<Secs2Variant>,
-    },
+pub struct HsmsMessage {
+    pub header: HsmsHeader,
+    pub payload: Option<Secs2Variant>,
 }
 
 impl HsmsMessage {
     pub fn new(header: HsmsHeader, payload: Option<Secs2Variant>) -> Self {
-        Self::Message { header, payload }
+        Self { header, payload }
     }
 
     pub fn header(&self) -> &HsmsHeader {
-        match self {
-            Self::Message { header, .. } => header,
-        }
+        &self.header
     }
 
     pub fn payload(&self) -> Option<&Secs2Variant> {
-        match self {
-            Self::Message { payload, .. } => payload.as_ref(),
-        }
+        self.payload.as_ref()
     }
 
     pub fn is_data(&self) -> bool {
