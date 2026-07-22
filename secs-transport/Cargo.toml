@@ -1,0 +1,12 @@
+[package]
+name = "secs-transport"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+num_enum = "0.7.5"
+sansio = "1.0.1"
+enumset = "1.1.13"
+secs-ii.workspace = true
+thiserror.workspace = true
+log.workspace = true
