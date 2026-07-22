@@ -12,13 +12,13 @@ use crate::transport::ConnectionRole;
 use crate::transport::SecsTimeoutUnit;
 use crate::transport::SessionId;
 use crate::transport::SystemByte;
+use crate::transport::TimeoutTicket;
 use crate::transport::error::SecsTransportError;
 use crate::transport::hsms::HsmsHeader;
 use crate::transport::hsms::HsmsMessage;
 use crate::transport::hsms::config::HsmsTransportConfig;
 use crate::transport::hsms::protocol::assembler::HsmsAssembler;
 use crate::util::time::TimeoutManager;
-use crate::util::time::TimeoutTicket;
 
 /// 트랜잭션 요청 - 응답 시 timeout 처리를 위한 매핑 정보
 #[derive(PartialEq, Eq, PartialOrd, Ord)]

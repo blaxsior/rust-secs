@@ -1,29 +1,19 @@
-use secs_common::TransactionKey;
+pub use secs_common::TimeoutTicket;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum RuntimeTimeout {
-    T1,
-    T2,
-    T3(TransactionKey),
-    T4(TransactionKey),
-    T5,
-    T6,
-    T7,
-    T8,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TimeoutTicket {
-    pub timeout: RuntimeTimeout,
-    pub generation: u32,
-}
-
-pub trait RuntimeTimer {
+pub trait Timer {
     type Error;
+    type Duration;
+    type Handle;
 
-    fn start(&mut self, timeout: RuntimeTimeout) -> Result<TimeoutTicket, Self::Error>;
+    fn start_after(&mut self, duration: Self::Duration) -> Result<Self::Handle, Self::Error>;
 
-    fn cancel(&mut self, timeout: RuntimeTimeout) -> Result<(), Self::Error>;
+    fn cancel(&mut self, handle: Self::Handle) -> Result<(), Self::Error>;
+}
 
-    fn poll_timeout(&mut self) -> Result<Option<TimeoutTicket>, Self::Error>;
+pub trait RuntimeTimer: Timer {
+    fn start_secs_timeout(&mut self, ticket: TimeoutTicket) -> Result<Self::Handle, Self::Error>;
+
+    fn cancel_secs_timeout(&mut self, handle: Self::Handle) -> Result<(), Self::Error>;
+
+    fn poll_secs_timeout(&mut self) -> Result<Option<TimeoutTicket>, Self::Error>;
 }

@@ -201,8 +201,8 @@ where
     T: RuntimeTimer,
 {
     pub fn arm_machine_timeouts(&mut self) -> Result<(), T::Error> {
-        while let Some(timeout) = self.machine.poll_timeout() {
-            let _ = self.timer.start(timeout)?;
+        while let Some(ticket) = self.machine.poll_timeout() {
+            let _ = self.timer.start_secs_timeout(ticket)?;
         }
 
         Ok(())
@@ -211,8 +211,8 @@ where
     fn arm_machine_timeouts_count(&mut self) -> Result<usize, T::Error> {
         let mut count = 0;
 
-        while let Some(timeout) = self.machine.poll_timeout() {
-            let _ = self.timer.start(timeout)?;
+        while let Some(ticket) = self.machine.poll_timeout() {
+            let _ = self.timer.start_secs_timeout(ticket)?;
             count += 1;
         }
 
@@ -225,7 +225,11 @@ where
     where
         D: ByteDataSource,
     {
-        let Some(ticket) = self.timer.poll_timeout().map_err(RuntimeError::Timer)? else {
+        let Some(ticket) = self
+            .timer
+            .poll_secs_timeout()
+            .map_err(RuntimeError::Timer)?
+        else {
             return Ok(());
         };
 
@@ -242,7 +246,11 @@ where
     {
         let mut count = 0;
 
-        while let Some(ticket) = self.timer.poll_timeout().map_err(RuntimeError::Timer)? {
+        while let Some(ticket) = self
+            .timer
+            .poll_secs_timeout()
+            .map_err(RuntimeError::Timer)?
+        {
             self.machine
                 .handle_timeout(ticket)
                 .map_err(RuntimeError::Machine)?;

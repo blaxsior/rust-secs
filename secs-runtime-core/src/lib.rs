@@ -12,9 +12,9 @@ pub use error::{MachineError, RuntimeError};
 pub use io::ByteDataSource;
 pub use machine::{MachineEvent, MachineSignal, MessageMachine};
 pub use message::{RuntimeMessage, SystemByteSource};
-pub use timer::{RuntimeTimeout, RuntimeTimer, TimeoutTicket};
+pub use timer::{RuntimeTimer, TimeoutTicket, Timer};
 
 pub use secs_common::{
-    ConnectionRole, DeviceId, SessionId, SystemByte, TransactionKey, TransactionOwner,
-    TransferContext,
+    ConnectionRole, DeviceId, SecsTimeoutUnit, SessionId, SystemByte, TimeoutId, TransactionKey,
+    TransactionOwner, TransferContext,
 };

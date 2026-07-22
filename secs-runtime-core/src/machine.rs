@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 
 use crate::message::RuntimeMessage;
-use crate::timer::{RuntimeTimeout, TimeoutTicket};
+use crate::timer::TimeoutTicket;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MachineSignal {
@@ -35,5 +35,5 @@ pub trait MessageMachine {
 
     fn poll_event(&mut self) -> Option<MachineEvent>;
 
-    fn poll_timeout(&mut self) -> Option<RuntimeTimeout>;
+    fn poll_timeout(&mut self) -> Option<TimeoutTicket>;
 }

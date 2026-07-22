@@ -1,13 +1,13 @@
 use crate::{
     transport::{
-        ConnectionRole, SecsTimeoutUnit,
+        ConnectionRole, SecsTimeoutUnit, TimeoutTicket,
         error::SecsTransportError,
         secs1::{
             block::{Secs1Block, Secs1BlockHeader, Secs1HandshakeCode},
             config::Secs1TransportConfig,
         },
     },
-    util::time::{TimeoutManager, TimeoutTicket},
+    util::time::TimeoutManager,
 };
 
 use alloc::collections::VecDeque;

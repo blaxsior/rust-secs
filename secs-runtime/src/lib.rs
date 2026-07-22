@@ -9,8 +9,9 @@ pub mod secs2;
 
 pub use crate::core::{
     ByteDataSource, ConnectionRole, DeviceId, MachineError, MachineEvent, MachineSignal,
-    MessageMachine, RuntimeError, RuntimeMessage, RuntimeTimeout, RuntimeTimer, SessionId,
-    SystemByte, SystemByteSource, TimeoutTicket, TransactionKey, TransactionOwner, TransferContext,
+    MessageMachine, RuntimeError, RuntimeMessage, RuntimeTimer, SessionId, SystemByte,
+    SystemByteSource, TimeoutId, TimeoutTicket, Timer, TransactionKey, TransactionOwner,
+    TransferContext,
 };
 pub use crate::machine::{SecsMachine, SecsMachineError};
 pub use crate::message::{MessageRuntime, MessageRuntimeEvent, MessageRuntimeTick};

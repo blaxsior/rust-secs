@@ -203,6 +203,7 @@ dependencies = [
  "sansio",
  "secs-common",
  "secs-ii",
+ "secs-runtime-core",
  "thiserror",
 ]
 
