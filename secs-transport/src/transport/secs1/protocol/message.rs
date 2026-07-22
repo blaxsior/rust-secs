@@ -37,9 +37,9 @@ pub enum Secs1MessageEvent {
     SendComplete(TransactionKey),
     /// 메시지를 성공적으로 수신
     RecvComplete(TransactionKey),
-
     TransactionEnd(TransactionKey),
-
+    /// reply 필요
+    ReplyRequired(TransactionKey),
     /// 메시지 송수신 중 타임아웃 발생
     MessageTimeout(TransactionKey, SecsTimeoutUnit),
     /// 비정상적인 상태 전이 등 에러가 발생한 경우
@@ -276,8 +276,11 @@ impl Secs1MessageMachine {
                 }
                 Secs1TransactionEffect::TransactionEnd => {
                     self.transaction_manager.remove(transaction_key);
+                    self.emit_event(Secs1MessageEvent::TransactionEnd(*transaction_key));
                 }
-                Secs1TransactionEffect::ReplyRequired(key) => {}
+                Secs1TransactionEffect::ReplyRequired => {
+                       self.emit_event(Secs1MessageEvent::ReplyRequired(*transaction_key));
+                }
             }
         }
     }
@@ -640,28 +643,18 @@ mod tests {
         assert!(events.iter().any(|event| matches!(
             event,
             Secs1MessageEvent::RecvComplete (
-                transaction_key
+                 transaction_key
              ) if *transaction_key == expected_key
         )));
-        assert!(machine.poll_timeout().is_none());
-
-        let reply = build_secondary_message(device_id, system_byte, Rbit::FORWARD, false);
-        machine.handle_write(reply).unwrap();
-
-        let mut blocks = drain_blocks(&mut machine);
-        assert_eq!(blocks.len(), 1);
-        let block = blocks.remove(0);
-        machine
-            .handle_event(Secs1MessageSignal::BlockSendSuccess {
-                header: block.header,
-            })
-            .unwrap();
-        let events = drain_events(&mut machine);
-        assert!(events.iter().any(|it| matches!(
-            it,
-            Secs1MessageEvent::SendComplete(
-                transaction_key
-             ) if *transaction_key == expected_key
+        assert!(events.iter().any(|event| matches!(
+            event,
+            Secs1MessageEvent::TransactionEnd(transaction_key)
+                if *transaction_key == expected_key
+        )));
+         assert!(events.iter().any(|event| matches!(
+            event,
+            Secs1MessageEvent::ReplyRequired(transaction_key)
+                if *transaction_key == expected_key
         )));
         assert!(machine.poll_timeout().is_none());
     }
