@@ -328,7 +328,7 @@ impl Secs1BlockTransferMachine {
                 .incoming_blocks
                 .front()
                 .expect("unexpected empty block queue when send");
-            block.to_bytes_with_checksum()
+            block.to_bytes()
         };
 
         self.write(bytes);
@@ -425,14 +425,12 @@ impl Secs1BlockTransferMachine {
 
             // 데이터를 정상적으로 수신함
             if buffer.len() == (*length + 2) as usize {
-                let checksum_start = buffer.len() - 2;
-                let (data_part, checksum_part) = buffer.split_at(checksum_start);
-                let expected = u16::from_be_bytes([checksum_part[0], checksum_part[1]]);
+                let mut block_bytes = Vec::with_capacity(buffer.len() + 1);
+                block_bytes.push(*length);
+                block_bytes.extend_from_slice(buffer);
 
                 // 블록 완성 && checksum 검증 성공 -> 상위에 블록 전달 + ACK 전송 + IDLE 복귀
-                if let Ok(block) = Secs1Block::try_from(data_part)
-                    && block.verify_checksum(expected)
-                {
+                if let Ok(block) = Secs1Block::try_from(block_bytes.as_slice()) {
                     log::debug!(
                         "[{}] success to recv block. {:?}",
                         self.state.name(),
@@ -1086,7 +1084,8 @@ mod tests {
         });
 
         let expected = message_block(config.device_id);
-        let bytes = expected.to_bytes_with_checksum();
+        let mut bytes = expected.to_bytes();
+        bytes.remove(0);
         //secs block 읽기
 
         machine.handle_read(&bytes).unwrap();

@@ -6,10 +6,15 @@ use crate::transport::{DeviceId, Rbit, SystemByte, Wbit, error::SecsTransportErr
 
 const WITHOUT_MSB: u8 = 0x7F;
 const MSB_ONLY: u8 = 0x80;
+const HEADER_LEN: usize = 10;
+const CHECKSUM_LEN: usize = 2;
+const LENGTH_LEN: usize = 1;
+const MIN_BLOCK_BODY_LEN: usize = HEADER_LEN;
+const MAX_BLOCK_BODY_LEN: usize = 254;
 
+/// SECS-I Block Transfer Protocol에서 사용하는 Block.
 ///
-/// SECS-I Block Transfer Protocol 중 사용되는 구조체
-///
+/// Wire format은 `length + header + data + checksum`이다.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Secs1Block {
     pub header: Secs1BlockHeader,
@@ -17,7 +22,14 @@ pub struct Secs1Block {
 }
 
 impl Secs1Block {
-    // pub fn new(header: Secs1BlockHeader, )
+    pub fn length(&self) -> u8 {
+        let length = HEADER_LEN + self.data.len();
+        assert!(
+            length <= MAX_BLOCK_BODY_LEN,
+            "SECS-I block body length must be <= 254"
+        );
+        length as u8
+    }
 
     pub fn checksum(&self) -> u16 {
         self.header
@@ -31,10 +43,8 @@ impl Secs1Block {
         self.checksum() == expected
     }
 
-    /// bytes 배열로 변환
-    pub fn to_bytes(&self) -> Vec<u8> {
+    fn to_body_bytes(&self) -> Vec<u8> {
         let header = self.header.to_bytes();
-
         let mut buf = Vec::with_capacity(header.len() + self.data.len());
 
         buf.extend_from_slice(&header);
@@ -43,12 +53,15 @@ impl Secs1Block {
         buf
     }
 
-    pub fn to_bytes_with_checksum(&self) -> Vec<u8> {
-        let mut bytes = self.to_bytes();
-        let checksum = self.checksum();
+    /// `length + header + data + checksum` 형태의 SECS-I block bytes로 변환한다.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(self.length() as usize + LENGTH_LEN + CHECKSUM_LEN);
 
-        bytes.extend_from_slice(checksum.to_be_bytes().as_slice());
-        return bytes;
+        bytes.push(self.length());
+        bytes.extend_from_slice(&self.to_body_bytes());
+        bytes.extend_from_slice(&self.checksum().to_be_bytes());
+
+        bytes
     }
 }
 
@@ -56,47 +69,64 @@ impl TryFrom<&[u8]> for Secs1Block {
     type Error = SecsTransportError;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        if value.len() < 10 || value.len() > 254 {
+        let Some(length) = value.first().copied() else {
+            return Err(SecsTransportError::InvalidBlockLength(0));
+        };
+
+        let body_len = length as usize;
+        if body_len < MIN_BLOCK_BODY_LEN || body_len > MAX_BLOCK_BODY_LEN {
+            return Err(SecsTransportError::InvalidBlockLength(body_len));
+        }
+        
+        let expected_wire_len = LENGTH_LEN + body_len + CHECKSUM_LEN;
+        if value.len() != expected_wire_len {
             return Err(SecsTransportError::InvalidBlockLength(value.len()));
         }
 
-        let raw_header: [u8; 10] = value[0..10]
+        let body_start = LENGTH_LEN;
+        let body_end = body_start + body_len;
+        let checksum_start = body_end;
+
+        let raw_header: [u8; HEADER_LEN] = value[body_start..body_start + HEADER_LEN]
             .try_into()
             .map_err(|_| SecsTransportError::InvalidBlockHeader)?;
 
         let header = Secs1BlockHeader::try_from(raw_header)?;
+        let data = value[body_start + HEADER_LEN..body_end].to_vec();
+        let expected_checksum =
+            u16::from_be_bytes([value[checksum_start], value[checksum_start + 1]]);
 
-        Ok(Self {
-            header,
-            data: value[10..].to_vec(),
-        })
+        let block = Self { header, data };
+        if !block.verify_checksum(expected_checksum) {
+            return Err(SecsTransportError::BlockError);
+        }
+
+        Ok(block)
     }
 }
 
-///
-/// SECS-I block header을 표현하는 구조체
-///
+/// SECS-I block header.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Secs1BlockHeader {
-    /// 통신 대상 장치의 ID 값
+    /// 통신 대상 장치 ID.
     pub device_id: DeviceId,
-    /// reverse bit. eqp -> host인 경우 true
+    /// Reverse bit.
     pub rbit: Rbit,
-    /// wait bit. primary msg에 대한 응답이 필요한 경우 true
+    /// Wait bit. Primary message에 대한 응답이 필요한 경우 true.
     pub wbit: Wbit,
     pub stream: StreamId,
     pub function: FunctionId,
-    /// end bit. 마지막 block인 경우 true
+    /// End bit. 마지막 block인 경우 true.
     pub ebit: bool,
-    /// block 번호. 단일 block은 0 허용, 아니면 1부터 시작하여 1씩 증가
+    /// Block 번호. 단일 block은 0 허용, 다중 block은 1부터 증가.
     pub block_no: u16,
-    /// block transfer에 대한 트랜잭션을 식별하기 위한 byte 정보
+    /// Transaction 식별을 위한 system byte.
     pub system_byte: SystemByte,
 }
 
 impl Secs1BlockHeader {
-    pub fn to_bytes(&self) -> [u8; 10] {
-        let mut h = [0u8; 10];
+    pub fn to_bytes(&self) -> [u8; HEADER_LEN] {
+        let mut h = [0u8; HEADER_LEN];
 
         h[0] = ((self.rbit.0 as u8) << 7) | ((self.device_id.0 >> 8) as u8 & WITHOUT_MSB);
         h[1] = self.device_id.0 as u8;
@@ -112,36 +142,31 @@ impl Secs1BlockHeader {
         h
     }
 
-    /// 마지막 block인지 여부
     pub fn is_end(&self) -> bool {
         self.ebit
     }
 
-    /// 응답을 요구하는지 여부
     pub fn need_reply(&self) -> bool {
         self.wbit.need_reply()
     }
 
-    /// primary message인지 여부
     pub fn is_primary(&self) -> bool {
         self.function.is_primary()
     }
 
-    /// primary message인지 여부
     pub fn is_secondary(&self) -> bool {
         self.function.is_secondary()
     }
 
-    /// 첫번째 block인지 여부
     pub fn is_first_block(&self) -> bool {
         self.block_no == 1 || (self.block_no == 0 && self.ebit)
     }
 }
 
-impl TryFrom<[u8; 10]> for Secs1BlockHeader {
+impl TryFrom<[u8; HEADER_LEN]> for Secs1BlockHeader {
     type Error = SecsTransportError;
 
-    fn try_from(h: [u8; 10]) -> Result<Self, Self::Error> {
+    fn try_from(h: [u8; HEADER_LEN]) -> Result<Self, Self::Error> {
         Ok(Self {
             rbit: Rbit(h[0] & MSB_ONLY != 0),
             device_id: DeviceId(u16::from_be_bytes([h[0] & WITHOUT_MSB, h[1]])),
@@ -158,17 +183,17 @@ impl TryFrom<[u8; 10]> for Secs1BlockHeader {
     }
 }
 
-/// Secs-I 통신 Block Transfer Protocol에서 사용되는 코드
+/// SECS-I Block Transfer Protocol에서 사용하는 handshake code.
 #[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Secs1HandshakeCode {
-    /// request to send
+    /// Request to send.
     ENQ = 0b00000101,
-    /// ready to receive
+    /// Ready to receive.
     EOT = 0b00000100,
-    /// correct reception
+    /// Correct reception.
     ACK = 0b00000110,
-    // incorrect reception
+    /// Incorrect reception.
     NAK = 0b00010101,
 }
 
@@ -191,12 +216,7 @@ mod tests {
 
         assert_eq!(
             header.to_bytes(),
-            [
-                0x92, // R=1, device_id high=0x12
-                0x34, 0xC5, // W=1, stream=0x45
-                0x67, 0x92, // E=1, block_no high=0x12
-                0x34, 0x89, 0xAB, 0xCD, 0xEF,
-            ]
+            [0x92, 0x34, 0xC5, 0x67, 0x92, 0x34, 0x89, 0xAB, 0xCD, 0xEF,]
         );
     }
 
@@ -255,38 +275,77 @@ mod tests {
         }
     }
 
+    fn sample_block_bytes() -> [u8; 17] {
+        [
+            // length
+            0x0E, // body
+            0x92, 0x34, 0xC5, 0x67, 0x92, 0x34, 0x89, 0xAB, 0xCD, 0xEF, 0x11, 0x22, 0x33, 0x44,
+            // checksum
+            0x06, 0x52,
+        ]
+    }
+
     #[test]
     fn test_secs1_block_to_bytes() {
         let block = sample_block();
 
-        assert_eq!(
-            block.to_bytes(),
-            vec![
-                0x92, 0x34, 0xC5, 0x67, 0x92, 0x34, 0x89, 0xAB, 0xCD, 0xEF, 0x11, 0x22, 0x33, 0x44,
-            ]
-        );
+        assert_eq!(block.to_bytes(), sample_block_bytes());
     }
 
     #[test]
     fn test_secs1_block_try_from() {
-        let raw = [
-            0x92, 0x34, 0xC5, 0x67, 0x92, 0x34, 0x89, 0xAB, 0xCD, 0xEF, 0x11, 0x22, 0x33, 0x44,
-        ];
+        let raw = sample_block_bytes();
 
         let block = Secs1Block::try_from(raw.as_slice()).unwrap();
 
+        assert_eq!(block.length(), raw[0]);
         assert_eq!(block.header, sample_header());
         assert_eq!(block.data, vec![0x11, 0x22, 0x33, 0x44]);
+        assert_eq!(block.checksum(), 0x0652);
+    }
+
+    #[test]
+    fn test_secs1_block_try_from_rejects_body_only_bytes() {
+        let raw = sample_block().to_body_bytes();
+
+        assert!(matches!(
+            Secs1Block::try_from(raw.as_slice()),
+            Err(SecsTransportError::InvalidBlockLength(14))
+        ));
+    }
+
+    #[test]
+    fn test_secs1_block_try_from_rejects_checksum_mismatch() {
+        let mut raw = sample_block_bytes();
+        let last = raw.len() - 1;
+        raw[last] = raw[last].wrapping_add(1);
+
+        assert!(matches!(
+            Secs1Block::try_from(raw.as_slice()),
+            Err(SecsTransportError::BlockError)
+        ));
+    }
+
+    #[test]
+    fn test_secs1_block_try_from_rejects_length_mismatch() {
+        let mut raw = sample_block_bytes();
+        raw[0] -= 1;
+
+        assert!(matches!(
+            Secs1Block::try_from(raw.as_slice()),
+            Err(SecsTransportError::InvalidBlockLength(17))
+        ));
     }
 
     #[test]
     fn test_secs1_block_round_trip() {
-        let block = sample_block();
+        let block = Secs1Block::try_from(sample_block_bytes().as_slice()).unwrap();
 
         let bytes = block.to_bytes();
         let decoded = Secs1Block::try_from(bytes.as_slice()).unwrap();
 
         assert_eq!(decoded, block);
+        assert_eq!(bytes, sample_block_bytes());
     }
 
     #[test]
@@ -294,7 +353,7 @@ mod tests {
         let block = sample_block();
 
         let expected = block
-            .to_bytes()
+            .to_body_bytes()
             .iter()
             .fold(0u16, |acc, b| acc.wrapping_add(*b as u16));
 
@@ -312,11 +371,16 @@ mod tests {
 
         assert!(matches!(
             Secs1Block::try_from(&[0u8; 9][..]),
-            Err(SecsTransportError::InvalidBlockLength(9))
+            Err(SecsTransportError::InvalidBlockLength(0))
         ));
 
         assert!(matches!(
-            Secs1Block::try_from(&[0u8; 255][..]),
+            Secs1Block::try_from(&[0x0A, 0, 0][..]),
+            Err(SecsTransportError::InvalidBlockLength(3))
+        ));
+
+        assert!(matches!(
+            Secs1Block::try_from(&[255u8; 255][..]),
             Err(SecsTransportError::InvalidBlockLength(255))
         ));
     }
