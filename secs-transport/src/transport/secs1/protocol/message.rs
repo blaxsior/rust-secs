@@ -3,7 +3,7 @@ use crate::transport::secs1::protocol::message::transaction::{
     Secs1MessageTransaction, Secs1TransactionEffect,
 };
 use crate::transport::secs1::protocol::message::transaction_manager::Secs1TransactionManager;
-use crate::transport::{DeviceId, TimeoutTicket, TransactionOwner, TransferContext};
+use crate::transport::{DeviceId, TimeoutTicket, TransferContext};
 use crate::{
     transport::{
         SecsTimeoutUnit, TransactionKey,

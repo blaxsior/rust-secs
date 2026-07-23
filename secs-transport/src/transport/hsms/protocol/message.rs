@@ -14,6 +14,7 @@ use crate::transport::TimeoutTicket;
 use crate::transport::error::SecsTransportError;
 use crate::transport::hsms::HsmsHeader;
 use crate::transport::hsms::HsmsMessage;
+use crate::transport::hsms::HsmsSType;
 use crate::transport::hsms::config::HsmsTransportConfig;
 use crate::transport::hsms::protocol::assembler::HsmsAssembler;
 use crate::transport::hsms::protocol::message::transaction::HsmsMessageTransaction;
@@ -36,6 +37,8 @@ pub struct HsmsMessageMachine {
     /// timeout 처리 객체
     timeout_manager: TimeoutManager,
     transaction_manager: HsmsTransactionManager,
+    /// 현재 연결을 식별하는 세션 ID
+    session_id: SessionId,
 }
 
 /// 외부로부터 받는 신호
@@ -72,6 +75,7 @@ impl HsmsMessageMachine {
             outgoing_events: VecDeque::new(),
             timeout_manager: TimeoutManager::new(),
             transaction_manager: HsmsTransactionManager::new(),
+            session_id: config.session_id
         }
     }
 
@@ -156,6 +160,12 @@ impl HsmsMessageMachine {
         // Routing ERROR: 내가 다루는 deviceId가 아님 -> 에러 알리고 무시
         let transaction_key = Self::get_transaction_key(TransferContext::Recv, &msg.header);
 
+        if !self.is_known_session(&msg.header) {
+            log::warn!("[message] unknown device id: {:?}", msg.header.session_id);
+            // self.handle_unknown_device(block);
+            return;
+        }
+
         // 기존 트랜잭션이 있나? 없으면 생성 후 대응
         let transaction = match self.transaction_manager.find(&transaction_key) {
             Some(t) => t,
@@ -190,6 +200,14 @@ impl HsmsMessageMachine {
         let _ = transaction.handle_event(signal);
         let outputs = Self::take_transaction_outputs(transaction);
         self.handle_transaction_outputs(outputs, &transaction_key);
+    }
+
+    fn is_known_session(&self, header: &HsmsHeader) -> bool {
+        match header.stype {
+            HsmsSType::DataMessage => header.session_id == self.session_id,
+            HsmsSType::RejectReq => true,
+            _ => header.session_id == SessionId::CONTROL,
+        }
     }
 
     fn handle_transaction_outputs(
