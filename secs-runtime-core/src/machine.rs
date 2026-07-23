@@ -1,5 +1,3 @@
-use alloc::vec::Vec;
-
 use crate::message::RuntimeMessage;
 use crate::timer::TimeoutTicket;
 
@@ -17,8 +15,10 @@ pub enum MachineEvent {
     LinkCloseRequested,
 }
 
-pub trait MessageMachine {
-    fn handle_read_bytes(&mut self, bytes: &[u8]) -> Result<(), crate::error::MachineError>;
+/// 메시지 전송을 담당하는 구조체. 통신 방식은 내부에 숨기고 있음
+pub trait MessageTransport {
+    /// Message
+    fn start(&mut self);
 
     fn handle_write_message(
         &mut self,
@@ -29,9 +29,11 @@ pub trait MessageMachine {
 
     fn handle_timeout(&mut self, ticket: TimeoutTicket) -> Result<(), crate::error::MachineError>;
 
-    fn poll_read_message(&mut self) -> Option<RuntimeMessage>;
+    fn tick(&mut self) -> Result<(), crate::error::MachineError> {
+        Ok(())
+    }
 
-    fn poll_write_bytes(&mut self) -> Option<Vec<u8>>;
+    fn poll_read_message(&mut self) -> Option<RuntimeMessage>;
 
     fn poll_event(&mut self) -> Option<MachineEvent>;
 

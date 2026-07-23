@@ -7,7 +7,6 @@ use sansio::Protocol;
 use secs_common::TransactionKey;
 use secs_common::TransferContext;
 
-use crate::transport::ConnectionRole;
 use crate::transport::SecsTimeoutUnit;
 use crate::transport::SessionId;
 use crate::transport::TimeoutTicket;
@@ -22,12 +21,18 @@ use crate::transport::hsms::protocol::message::transaction::HsmsTransactionEffec
 use crate::transport::hsms::protocol::message::transaction_manager::HsmsTransactionManager;
 use crate::util::time::TimeoutManager;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HsmsWrite {
+    pub header: HsmsHeader,
+    pub bytes: Vec<u8>,
+}
+
 /// HSMS 전송 계층 대응
 pub struct HsmsMessageMachine {
     /// byte to message 조립기
     msg_assembler: HsmsAssembler,
     /// serial 송신할 데이터를 임시로 보관하는 큐. poll_write
-    outgoing_buffer: VecDeque<u8>,
+    outgoing_buffer: VecDeque<HsmsWrite>,
     /// hsms 통신을 통해 수신한 블록을 저장하는 큐. poll_read
     outgoing_msgs: VecDeque<HsmsMessage>,
     /// 외부로 타임아웃 시작 알리는 큐. poll_timeout
@@ -75,7 +80,7 @@ impl HsmsMessageMachine {
             outgoing_events: VecDeque::new(),
             timeout_manager: TimeoutManager::new(),
             transaction_manager: HsmsTransactionManager::new(),
-            session_id: config.session_id
+            session_id: config.session_id,
         }
     }
 
@@ -126,7 +131,10 @@ impl HsmsMessageMachine {
 
         match msg.to_bytes() {
             Ok(bytes) => {
-                self.outgoing_buffer.extend(bytes);
+                self.outgoing_buffer.push_back(HsmsWrite {
+                    header: msg.header,
+                    bytes,
+                });
             }
             Err(error) => {
                 self.emit_event(HsmsMessageEvent::ErrorOccured(error));
@@ -254,7 +262,7 @@ impl HsmsMessageMachine {
 
 impl Protocol<&[u8], HsmsMessage, HsmsMessageSignal> for HsmsMessageMachine {
     type Rout = HsmsMessage;
-    type Wout = Vec<u8>;
+    type Wout = HsmsWrite;
     type Eout = HsmsMessageEvent;
     type Error = SecsTransportError;
     type Time = TimeoutTicket;
@@ -290,8 +298,7 @@ impl Protocol<&[u8], HsmsMessage, HsmsMessageSignal> for HsmsMessageMachine {
     }
 
     fn poll_write(&mut self) -> Option<Self::Wout> {
-        let data: Vec<u8> = self.outgoing_buffer.drain(..).collect();
-        if data.is_empty() { None } else { Some(data) }
+        self.outgoing_buffer.pop_front()
     }
 
     /// timeout 발생 시 처리

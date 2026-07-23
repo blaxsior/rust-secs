@@ -1,7 +1,7 @@
 use secs_ii::Secs2Message;
 
 use crate::core::{
-    ByteDataSource, MachineError, MachineSignal, MessageMachine, RuntimeError, RuntimeTimer,
+    ByteDataSource, MachineError, MachineSignal, MessageTransport, RuntimeError, RuntimeTimer,
     SystemByteSource,
 };
 use crate::message::{MessageRuntime, MessageRuntimeTick};
@@ -52,7 +52,7 @@ impl<D, M, T, C, H> SecsMachine<D, M, T, C, H> {
 impl<D, M, T, C, H> SecsMachine<D, M, T, C, H>
 where
     D: ByteDataSource,
-    M: MessageMachine,
+    M: MessageTransport,
     T: RuntimeTimer,
 {
     pub fn start(&mut self) -> Result<(), SecsMachineError<D::Error, T::Error, H::Error>>
@@ -97,7 +97,7 @@ where
 impl<D, M, T, C, H> SecsMachine<D, M, T, C, H>
 where
     D: ByteDataSource,
-    M: MessageMachine,
+    M: MessageTransport,
     T: RuntimeTimer,
     C: SystemByteSource,
     H: Secs2MessageHandler,

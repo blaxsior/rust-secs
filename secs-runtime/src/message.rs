@@ -1,5 +1,5 @@
 use crate::core::{
-    ByteDataSource, MachineError, MachineEvent, MachineSignal, MessageMachine, RuntimeError,
+    ByteDataSource, MachineError, MachineEvent, MachineSignal, MessageTransport, RuntimeError,
     RuntimeMessage, RuntimeTimer,
 };
 
@@ -13,7 +13,6 @@ pub struct MessageRuntimeTick {
     pub timeout_count: usize,
     pub machine_event_count: usize,
     pub read_bytes: usize,
-    pub write_count: usize,
     pub timeout_request_count: usize,
 }
 
@@ -22,7 +21,6 @@ impl MessageRuntimeTick {
         self.timeout_count > 0
             || self.machine_event_count > 0
             || self.read_bytes > 0
-            || self.write_count > 0
             || self.timeout_request_count > 0
     }
 }
@@ -69,7 +67,8 @@ impl<D, M, T> MessageRuntime<D, M, T> {
 
 impl<D, M, T> MessageRuntime<D, M, T>
 where
-    M: MessageMachine,
+    M: MessageTransport,
+    T: RuntimeTimer,
 {
     pub fn send(&mut self, msg: RuntimeMessage) -> Result<(), MachineError> {
         self.machine.handle_write_message(msg)
@@ -97,7 +96,8 @@ where
 impl<D, M, T> MessageRuntime<D, M, T>
 where
     D: ByteDataSource,
-    M: MessageMachine,
+    M: MessageTransport,
+    T: RuntimeTimer,
 {
     pub fn process_machine_event_once(
         &mut self,
@@ -142,64 +142,6 @@ where
         Ok(count)
     }
 
-    pub fn read_once(
-        &mut self,
-        buf: &mut [u8],
-    ) -> Result<usize, RuntimeError<D::Error, MachineError, T::Error>>
-    where
-        T: RuntimeTimer,
-    {
-        let len = self
-            .datasource
-            .read(buf)
-            .map_err(RuntimeError::DataSource)?;
-
-        if len > 0 {
-            self.machine
-                .handle_read_bytes(&buf[..len])
-                .map_err(RuntimeError::Machine)?;
-        }
-
-        Ok(len)
-    }
-
-    pub fn flush_writes(&mut self) -> Result<(), RuntimeError<D::Error, MachineError, T::Error>>
-    where
-        T: RuntimeTimer,
-    {
-        while let Some(bytes) = self.machine.poll_write_bytes() {
-            self.datasource
-                .write(&bytes)
-                .map_err(RuntimeError::DataSource)?;
-        }
-
-        Ok(())
-    }
-
-    fn flush_writes_count(
-        &mut self,
-    ) -> Result<usize, RuntimeError<D::Error, MachineError, T::Error>>
-    where
-        T: RuntimeTimer,
-    {
-        let mut count = 0;
-
-        while let Some(bytes) = self.machine.poll_write_bytes() {
-            self.datasource
-                .write(&bytes)
-                .map_err(RuntimeError::DataSource)?;
-            count += 1;
-        }
-
-        Ok(count)
-    }
-}
-
-impl<D, M, T> MessageRuntime<D, M, T>
-where
-    M: MessageMachine,
-    T: RuntimeTimer,
-{
     pub fn arm_machine_timeouts(&mut self) -> Result<(), T::Error> {
         while let Some(ticket) = self.machine.poll_timeout() {
             let _ = self.timer.start_secs_timeout(ticket)?;
@@ -264,7 +206,7 @@ where
 impl<D, M, T> MessageRuntime<D, M, T>
 where
     D: ByteDataSource,
-    M: MessageMachine,
+    M: MessageTransport,
     T: RuntimeTimer,
 {
     pub fn tick(
@@ -279,13 +221,12 @@ where
             .arm_machine_timeouts_count()
             .map_err(RuntimeError::Timer)?;
 
-        report.read_bytes += self.read_once(read_buf)?;
+        let _ = read_buf;
         report.machine_event_count += self.process_machine_events()?;
         report.timeout_request_count += self
             .arm_machine_timeouts_count()
             .map_err(RuntimeError::Timer)?;
 
-        report.write_count += self.flush_writes_count()?;
         report.machine_event_count += self.process_machine_events()?;
         report.timeout_request_count += self
             .arm_machine_timeouts_count()
@@ -307,7 +248,6 @@ where
             total.timeout_count += tick.timeout_count;
             total.machine_event_count += tick.machine_event_count;
             total.read_bytes += tick.read_bytes;
-            total.write_count += tick.write_count;
             total.timeout_request_count += tick.timeout_request_count;
 
             if !tick.did_work() {

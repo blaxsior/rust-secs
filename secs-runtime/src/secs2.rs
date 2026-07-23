@@ -6,8 +6,8 @@ use secs_ii::item::Secs2Variant;
 use secs_ii::{FunctionId, Secs2Message, StreamId};
 
 use crate::core::{
-    MachineError, MachineEvent, MessageMachine, RuntimeMessage, SystemByteSource, TransactionKey,
-    TransactionOwner,
+    MachineError, MachineEvent, MessageTransport, RuntimeMessage, RuntimeTimer, SystemByteSource,
+    TransactionKey, TransactionOwner,
 };
 use crate::message::{MessageRuntime, MessageRuntimeEvent};
 
@@ -263,7 +263,8 @@ pub trait Secs2MessageLayer {
 
 impl<D, M, T> Secs2MessageLayer for MessageRuntime<D, M, T>
 where
-    M: MessageMachine,
+    M: MessageTransport,
+    T: RuntimeTimer,
 {
     fn send(&mut self, msg: RuntimeMessage) -> Result<(), MachineError> {
         MessageRuntime::send(self, msg)

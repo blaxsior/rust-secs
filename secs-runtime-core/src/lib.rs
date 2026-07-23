@@ -12,7 +12,7 @@ pub mod timer;
 pub use client::{TransportClient, TransportClientEvent};
 pub use error::{MachineError, RuntimeError};
 pub use io::ByteDataSource;
-pub use machine::{MachineEvent, MachineSignal, MessageMachine};
+pub use machine::{MachineEvent, MachineSignal, MessageTransport};
 pub use message::{RuntimeMessage, SystemByteSource};
 pub use timer::{RuntimeTimer, TimeoutTicket, Timer};
 
