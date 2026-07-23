@@ -3,23 +3,20 @@ use crate::transport::hsms::config::HsmsTransportConfig;
 pub mod assembler;
 pub mod connection;
 
-use alloc::collections::BTreeSet;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
 use sansio::Protocol;
 use secs_common::TransactionKey;
-use secs_ii::FunctionId;
-use secs_ii::StreamId;
 
-use crate::transport::error::SecsTransportError;
-use crate::transport::hsms::protocol::assembler::HsmsAssembler;
-use crate::transport::hsms::HsmsHeader;
-use crate::transport::hsms::HsmsMessage;
 use crate::transport::ConnectionRole;
 use crate::transport::SecsTimeoutUnit;
 use crate::transport::SessionId;
 use crate::transport::TimeoutTicket;
+use crate::transport::error::SecsTransportError;
+use crate::transport::hsms::HsmsHeader;
+use crate::transport::hsms::HsmsMessage;
+use crate::transport::hsms::protocol::assembler::HsmsAssembler;
 use crate::util::time::TimeoutManager;
 
 /// HSMS 전송 계층 대응
@@ -52,9 +49,15 @@ pub enum HsmsMessageSignal {
 
 /// hsms message 처리 중 발생하는 이벤트
 pub enum HsmsMessageEvent {
+    /// 메시지를 성공적으로 송신
     SendComplete(TransactionKey),
+    /// 메시지를 성공적으로 수신
     RecvComplete(TransactionKey),
+    /// 트랜잭션 종료 알림
     TransactionEnd(TransactionKey),
+    /// reply 필요
+    ReplyRequired(TransactionKey),
+    /// 메시지 송수신 중 타임아웃 발생
     MessageTimeout(TransactionKey, SecsTimeoutUnit),
     /// 비정상적인 상태 전이 등 에러가 발생한 경우
     ErrorOccured(SecsTransportError),
@@ -144,11 +147,7 @@ impl Protocol<&[u8], HsmsMessage, HsmsMessageSignal> for HsmsMessageMachine {
 
     fn poll_write(&mut self) -> Option<Self::Wout> {
         let data: Vec<u8> = self.outgoing_buffer.drain(..).collect();
-        if data.is_empty() {
-            None
-        } else {
-            Some(data)
-        }
+        if data.is_empty() { None } else { Some(data) }
     }
 
     /// timeout 발생 시 처리

@@ -26,9 +26,9 @@ pub mod transaction_manager;
 /// secs-i message protocol 수행 중 외부에서 주입하는 이벤트(블록 정상 송신 등)
 pub enum Secs1MessageSignal {
     /// 대상 블록 전송에 성공함
-    BlockSendSuccess { header: Secs1BlockHeader },
+    BlockSendSuccess(Secs1BlockHeader),
     /// 대상 블록 전송을 실패
-    BlockSendFailed { header: Secs1BlockHeader },
+    BlockSendFailed(Secs1BlockHeader),
 }
 
 /// secs-i message protocol 수행 중 발생하는 이벤트
@@ -37,6 +37,7 @@ pub enum Secs1MessageEvent {
     SendComplete(TransactionKey),
     /// 메시지를 성공적으로 수신
     RecvComplete(TransactionKey),
+    /// 트랜잭션 종료 알림
     TransactionEnd(TransactionKey),
     /// reply 필요
     ReplyRequired(TransactionKey),
@@ -279,7 +280,7 @@ impl Secs1MessageMachine {
                     self.emit_event(Secs1MessageEvent::TransactionEnd(*transaction_key));
                 }
                 Secs1TransactionEffect::ReplyRequired => {
-                       self.emit_event(Secs1MessageEvent::ReplyRequired(*transaction_key));
+                    self.emit_event(Secs1MessageEvent::ReplyRequired(*transaction_key));
                 }
             }
         }
@@ -326,8 +327,8 @@ impl Secs1MessageMachine {
         log::debug!("[message] process signal");
         // send 처리를 위함
         let header = match signal {
-            Secs1MessageSignal::BlockSendSuccess { header } => header,
-            Secs1MessageSignal::BlockSendFailed { header } => header,
+            Secs1MessageSignal::BlockSendSuccess(header) => header,
+            Secs1MessageSignal::BlockSendFailed(header) => header,
         };
 
         // 내가 보낸 것에 대한 트랜잭션 키를 얻어 옴
@@ -507,9 +508,7 @@ mod tests {
         let block = blocks.remove(0);
 
         machine
-            .handle_event(Secs1MessageSignal::BlockSendSuccess {
-                header: block.header,
-            })
+            .handle_event(Secs1MessageSignal::BlockSendSuccess(block.header))
             .unwrap();
 
         let events = drain_events(&mut machine);
@@ -561,9 +560,7 @@ mod tests {
         let block = blocks.remove(0);
 
         machine
-            .handle_event(Secs1MessageSignal::BlockSendSuccess {
-                header: block.header,
-            })
+            .handle_event(Secs1MessageSignal::BlockSendSuccess(block.header))
             .unwrap();
 
         let events = drain_events(&mut machine);
@@ -590,9 +587,7 @@ mod tests {
         let mut blocks = drain_blocks(&mut machine);
         let block = blocks.remove(0);
         machine
-            .handle_event(Secs1MessageSignal::BlockSendSuccess {
-                header: block.header,
-            })
+            .handle_event(Secs1MessageSignal::BlockSendSuccess(block.header))
             .unwrap();
 
         let timeout = machine.poll_timeout().unwrap();
@@ -651,7 +646,7 @@ mod tests {
             Secs1MessageEvent::TransactionEnd(transaction_key)
                 if *transaction_key == expected_key
         )));
-         assert!(events.iter().any(|event| matches!(
+        assert!(events.iter().any(|event| matches!(
             event,
             Secs1MessageEvent::ReplyRequired(transaction_key)
                 if *transaction_key == expected_key

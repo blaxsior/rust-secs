@@ -111,12 +111,12 @@ impl Secs1Machine {
         match event {
             Secs1BlockTransferEvent::SendSuccess { header } => {
                 self.message
-                    .handle_event(Secs1MessageSignal::BlockSendSuccess { header })?;
+                    .handle_event(Secs1MessageSignal::BlockSendSuccess(header))?;
                 Ok(())
             }
             Secs1BlockTransferEvent::SendFailed { header, .. } => {
                 self.message
-                    .handle_event(Secs1MessageSignal::BlockSendFailed { header })?;
+                    .handle_event(Secs1MessageSignal::BlockSendFailed(header))?;
                 Ok(())
             }
             Secs1BlockTransferEvent::ReceiveFailed { error }

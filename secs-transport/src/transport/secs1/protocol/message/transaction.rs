@@ -268,7 +268,7 @@ impl Secs1MessageTransaction {
 
     fn handle_signal(&mut self, signal: Secs1MessageSignal) {
         match signal {
-            Secs1MessageSignal::BlockSendSuccess { header } => {
+            Secs1MessageSignal::BlockSendSuccess(header) => {
                 log::debug!("[tx {:?}] block send success: {:?}", self.id, header);
                 self.on_send(&header);
             }
@@ -649,9 +649,7 @@ mod tests {
 
         let block = transaction.poll_write().unwrap();
 
-        let signal = Secs1MessageSignal::BlockSendSuccess {
-            header: block.header,
-        };
+        let signal = Secs1MessageSignal::BlockSendSuccess(block.header);
         transaction.handle_signal(signal);
 
         // send 후 recv 대기 시 reply timer 활성화
@@ -712,9 +710,7 @@ mod tests {
 
         let block = transaction.poll_write().unwrap();
 
-        let signal = Secs1MessageSignal::BlockSendSuccess {
-            header: block.header,
-        };
+        let signal = Secs1MessageSignal::BlockSendSuccess(block.header);
         transaction.handle_signal(signal);
 
         // send 후 대기 X -> complete 처리
@@ -741,9 +737,7 @@ mod tests {
         let mut transaction = Secs1MessageTransaction::new_send(key, msg);
         let block = transaction.poll_write().unwrap();
 
-        transaction.handle_signal(Secs1MessageSignal::BlockSendSuccess {
-            header: block.header,
-        });
+        transaction.handle_signal(Secs1MessageSignal::BlockSendSuccess(block.header));
         let _ = drain_effects(&mut transaction);
 
         transaction
