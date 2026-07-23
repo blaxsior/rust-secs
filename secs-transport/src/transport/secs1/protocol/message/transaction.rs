@@ -22,13 +22,8 @@ pub enum Secs1TransactionState {
         /// 전송해야 할 블록 목록(남은 블록)
         blocks: VecDeque<Secs1Block>,
     },
-
     /// Primary 전송 후 Secondary Message 대기 중 (T3: reply Timer)
     WaitRecv,
-
-    /// Primary 수신 후 Secondary Message 전송 대기 중
-    // WaitSend,
-
     /// Message 수신 중인 상태 (T4: inter block timer)
     Recv {
         /// 수신 중인 블록 목록
@@ -45,7 +40,6 @@ impl Secs1TransactionState {
             Self::Idle => "IDLE",
             Self::Send { .. } => "SEND",
             Self::WaitRecv => "WAIT_RECV",
-            // Self::WaitSend => "WAIT_SEND",
             Self::Recv { .. } => "RECV",
             Self::End => "END",
         }

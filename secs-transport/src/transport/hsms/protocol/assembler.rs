@@ -36,6 +36,11 @@ impl HsmsAssembler {
         self.outgoing_messages.pop_front()
     }
 
+    /// T8 timeout 등에 의해 기존에 쌓인 버퍼를 clear
+    pub fn clear(&mut self) {
+        self.incoming_buffer.clear();
+    }
+
     fn process_buffer(&mut self) -> Result<(), SecsTransportError> {
         // 여러 메시지를 생성할 만큼 들어온 데이터가 큰 경우 고려
         loop {

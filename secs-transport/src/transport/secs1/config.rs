@@ -16,7 +16,9 @@ pub struct Secs1TransportConfig {
     pub t1_timeout: Duration,
     /// protocol timeout(ms): ENQ ~ EOT / EOT ~ length / 2nd checksum ~ any char
     pub t2_timeout: Duration,
+    // send - recv timeout
     pub t3_timeout: Duration,
+    // inter block timeout
     pub t4_timeout: Duration,
     pub t2_rty_limit: u8,
 }

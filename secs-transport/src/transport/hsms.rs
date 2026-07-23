@@ -43,6 +43,31 @@ impl HsmsHeader {
         }
     }
 
+    pub fn data(
+        session_id: SessionId,
+        stream: StreamId,
+        function: FunctionId,
+        need_reply: bool,
+        system_byte: SystemByte,
+    ) -> Self {
+        let stream = stream.0 & WITHOUT_MSB;
+        let byte2 = if need_reply {
+            stream | MSB_ONLY
+        } else {
+            stream
+        };
+        let byte3 = function.0;
+
+        Self::new(
+            session_id,
+            byte2,
+            byte3,
+            HsmsPType::SECS2,
+            HsmsSType::DataMessage,
+            system_byte,
+        )
+    }
+
     /// control 메시지 생성자
     pub fn control(byte2: u8, byte3: u8, stype: HsmsSType, system_byte: SystemByte) -> Self {
         Self::new(
@@ -259,4 +284,50 @@ pub enum HsmsRejectReasonCode {
     NotSupportedPType = 2,
     TransactionNotOpen = 3,
     NotSelected = 4,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_data_header_with_reply() {
+        let header = HsmsHeader::data(
+            SessionId(10),
+            StreamId(1),
+            FunctionId(3),
+            true,
+            SystemByte(100),
+        );
+
+        assert!(header.is_data());
+        assert!(!header.is_control());
+        assert_eq!(header.session_id, SessionId(10));
+        assert_eq!(header.stream(), StreamId(1));
+        assert_eq!(header.function(), FunctionId(3));
+        assert!(header.need_reply());
+        assert_eq!(header.byte2, 0x81);
+        assert_eq!(header.byte3, 0x03);
+        assert_eq!(header.ptype, HsmsPType::SECS2);
+        assert_eq!(header.stype, HsmsSType::DataMessage);
+        assert_eq!(header.system_byte, SystemByte(100));
+    }
+
+    #[test]
+    fn test_data_header_without_reply() {
+        let header = HsmsHeader::data(
+            SessionId(10),
+            StreamId(1),
+            FunctionId(4),
+            false,
+            SystemByte(101),
+        );
+
+        assert!(header.is_data());
+        assert_eq!(header.stream(), StreamId(1));
+        assert_eq!(header.function(), FunctionId(4));
+        assert!(!header.need_reply());
+        assert_eq!(header.byte2, 0x01);
+        assert_eq!(header.byte3, 0x04);
+    }
 }

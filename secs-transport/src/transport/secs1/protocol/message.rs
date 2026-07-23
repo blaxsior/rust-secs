@@ -104,11 +104,7 @@ impl Secs1MessageMachine {
     }
 
     /// header로부터 recv transaction_key를 획득
-    fn get_transaction_key(
-        &self,
-        context: TransferContext,
-        header: &Secs1BlockHeader,
-    ) -> TransactionKey {
+    fn get_transaction_key(context: TransferContext, header: &Secs1BlockHeader) -> TransactionKey {
         let is_primary = header.function.is_primary();
         let system_byte = header.system_byte;
 
@@ -177,53 +173,30 @@ impl Secs1MessageMachine {
         let function = msg.header.function;
         let system_byte = msg.header.system_byte;
 
-        if function.is_primary() {
-            // 요청 -> 트랜잭션을 새롭게 생성
-            let transaction_key = TransactionKey::new(TransactionOwner::Local, system_byte);
-
-            let transaction = match self.transaction_manager.create_send(&transaction_key, msg) {
-                Some(t) => t,
-                None => {
-                    log::warn!(
-                        "[message] failed to create send transaction: {:?}",
-                        transaction_key
-                    );
-                    self.emit_event(Secs1MessageEvent::ErrorOccured(
-                        SecsTransportError::NoSuchTransaction(transaction_key),
-                    ));
-                    return;
-                }
-            };
-            let outputs = Self::take_transaction_outputs(transaction);
-            self.handle_transaction_outputs(outputs, &transaction_key);
-        } else {
-            // 상대 request 받고 대응되는 메시지 보내는 상황
-            let transaction_key = TransactionKey::from(TransferContext::Send, false, system_byte);
-            let transaction = match self.transaction_manager.find(&transaction_key) {
-                Some(t) => t,
-                None => {
-                    log::warn!(
-                        "[message] send transaction not found: {:?}",
-                        transaction_key
-                    );
-                    self.emit_event(Secs1MessageEvent::ErrorOccured(
-                        SecsTransportError::NoSuchTransaction(transaction_key),
-                    ));
-                    return;
-                }
-            };
-
-            transaction.handle_write(msg).unwrap();
-
-            let outputs = Self::take_transaction_outputs(transaction);
-            self.handle_transaction_outputs(outputs, &transaction_key);
-        }
+        // 요청 -> 트랜잭션을 새롭게 생성
+        let transaction_key =
+            TransactionKey::from(TransferContext::Send, function.is_primary(), system_byte);
+        let transaction = match self.transaction_manager.create_send(&transaction_key, msg) {
+            Some(t) => t,
+            None => {
+                log::warn!(
+                    "[message] failed to create send transaction: {:?}",
+                    transaction_key
+                );
+                self.emit_event(Secs1MessageEvent::ErrorOccured(
+                    SecsTransportError::NoSuchTransaction(transaction_key),
+                ));
+                return;
+            }
+        };
+        let outputs = Self::take_transaction_outputs(transaction);
+        self.handle_transaction_outputs(outputs, &transaction_key);
     }
 
     fn process_receive(&mut self, block: Secs1Block) {
         log::debug!("[message] process receive: {:?}", block.header);
         // Routing ERROR: 내가 다루는 deviceId가 아님 -> 에러 알리고 무시
-        let transaction_key = self.get_transaction_key(TransferContext::Recv, &block.header);
+        let transaction_key = Self::get_transaction_key(TransferContext::Recv, &block.header);
 
         if !self.is_known_device(&block.header.device_id) {
             log::warn!("[message] unknown device id: {:?}", block.header.device_id);
@@ -297,7 +270,7 @@ impl Secs1MessageMachine {
             SecsTransportError::UnknownDeviceId(block.header.device_id),
         ));
 
-        let transaction_key = self.get_transaction_key(TransferContext::Recv, &block.header);
+        let transaction_key = Self::get_transaction_key(TransferContext::Recv, &block.header);
         // 트랜잭션으로 등록되어 있었던 경우라면 트랜잭션도 취소 처리
         self.transaction_manager.remove(&transaction_key);
     }
@@ -331,8 +304,8 @@ impl Secs1MessageMachine {
             Secs1MessageSignal::BlockSendFailed(header) => header,
         };
 
-        // 내가 보낸 것에 대한 트랜잭션 키를 얻어 옴
-        let transaction_key = self.get_transaction_key(TransferContext::Send, &header);
+        // 트랜잭션 찾아오기
+        let transaction_key = Self::get_transaction_key(TransferContext::Send, &header);
         let Some(transaction) = self.transaction_manager.find(&transaction_key) else {
             log::debug!("[message] no transaction for signal: {:?}", transaction_key);
             return;
