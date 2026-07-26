@@ -1,56 +1,56 @@
-use alloc::vec::Vec;
-use secs_common::{ConnectionRole, TimeoutTicket};
+use alloc::collections::VecDeque;
+use secs_common::{TimeoutTicket};
 use secs_runtime_core::{MachineEvent, MessageTransport};
 
-use crate::transport::hsms::{HsmsMessage, protocol::{connection::{HsmsConnectionState, HsmsSessionManager}, message::{HsmsMessageMachine, HsmsWrite}}};
+use crate::transport::hsms::{HsmsMessage, config::HsmsTransportConfig, protocol::message::HsmsMessageMachine};
 
 pub mod assembler;
 pub mod connection;
 pub mod message;
 
 pub struct HsmsTransport {
-    state: HsmsConnectionState,
-    role: ConnectionRole,
+
     message: HsmsMessageMachine,
     // outgoing_writes: Vec<HsmsWrite>,
-    outgoing_messages: Vec<HsmsMessage>,
-    outgoing_events: Vec<MachineEvent>,
-    outgoing_timeouts: Vec<TimeoutTicket>
+    outgoing_messages: VecDeque<HsmsMessage>,
+    outgoing_events: VecDeque<MachineEvent>,
+    outgoing_timeouts: VecDeque<TimeoutTicket>,
+}
+
+impl HsmsTransport {
+    pub fn new(config: &HsmsTransportConfig) -> Self {
+        Self {
+            message: HsmsMessageMachine::new(config),
+            outgoing_messages: VecDeque::new(),
+            outgoing_events: VecDeque::new(),
+            outgoing_timeouts: VecDeque::new()
+        }
+    }
 }
 
 impl MessageTransport for HsmsTransport {
     fn start(&mut self) {
         todo!()
     }
-
-    fn handle_write_message(
+    
+    fn write(
         &mut self,
         msg: secs_runtime_core::RuntimeMessage,
     ) -> Result<(), secs_runtime_core::error::MachineError> {
         todo!()
     }
-
-    fn handle_signal(&mut self, signal: secs_runtime_core::MachineSignal) -> Result<(), secs_runtime_core::error::MachineError> {
+    
+    fn read(&mut self) -> Option<secs_runtime_core::RuntimeMessage> {
         todo!()
     }
 
     fn handle_timeout(&mut self, ticket: TimeoutTicket) -> Result<(), secs_runtime_core::error::MachineError> {
         todo!()
     }
-
-    fn poll_read_message(&mut self) -> Option<secs_runtime_core::RuntimeMessage> {
-        todo!()
-    }
-
-    fn poll_event(&mut self) -> Option<MachineEvent> {
-        todo!()
-    }
-
+    
     fn poll_timeout(&mut self) -> Option<TimeoutTicket> {
         todo!()
     }
-}
 
-impl HsmsSessionManager for HsmsTransport {
-
+   
 }

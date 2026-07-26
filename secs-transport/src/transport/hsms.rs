@@ -286,6 +286,19 @@ pub enum HsmsRejectReasonCode {
     NotSelected = 4,
 }
 
+/// HSMS control message intent
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HsmsControl {
+    SelectReq,
+    SelectRsp(HsmsSelectStatus),
+    DeselectReq,
+    DeselectRsp(HsmsDeselectStatus),
+    LinktestReq,
+    LinktestRsp,
+    RejectReq(u8, HsmsRejectReasonCode),
+    SeparateReq,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
