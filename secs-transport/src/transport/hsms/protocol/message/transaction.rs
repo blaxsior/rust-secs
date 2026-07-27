@@ -221,12 +221,12 @@ impl HsmsMessageTransaction {
     /// reply block expected header
     /// complement R bit, same Device ID, Secondary(func + 1), same SystemByte
     /// wbit / ebit / block no 제외 비교
-    fn is_expected_header_for_reply(expected: &HsmsHeader, actual: &HsmsHeader) -> bool {
-        return expected.stream() == actual.stream()
-            && expected.function() == actual.function()
-            && expected.session_id == actual.session_id
-            && expected.system_byte == actual.system_byte;
-    }
+    // fn is_expected_header_for_reply(expected: &HsmsHeader, actual: &HsmsHeader) -> bool {
+    //     return expected.stream() == actual.stream()
+    //         && expected.function() == actual.function()
+    //         && expected.session_id == actual.session_id
+    //         && expected.system_byte == actual.system_byte;
+    // }
 
     /// reply timer(T3) 지정 + timer 체크 조건 설정
     fn set_reply_timer(&mut self, header: &HsmsHeader) {

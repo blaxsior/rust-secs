@@ -7,7 +7,7 @@ use core::convert::TryFrom;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use secs_ii::{FunctionId, StreamId, item::Secs2Variant};
 
-use crate::transport::error::SecsTransportError;
+use crate::transport::error::{HsmsHeaderError, SecsTransportError};
 use crate::transport::{SessionId, SystemByte};
 
 const WITHOUT_MSB: u8 = 0x7F;
@@ -123,12 +123,19 @@ impl TryFrom<[u8; 10]> for HsmsHeader {
     type Error = SecsTransportError;
 
     fn try_from(h: [u8; 10]) -> Result<Self, Self::Error> {
+        let ptype = HsmsPType::try_from(h[4]).map_err(|_| {
+            SecsTransportError::InvalidHsmsHeader(HsmsHeaderError::UnsupportedPType(h[4]))
+        })?;
+        let stype = HsmsSType::try_from(h[5]).map_err(|_| {
+            SecsTransportError::InvalidHsmsHeader(HsmsHeaderError::UnsupportedSType(h[5]))
+        })?;
+
         Ok(Self {
             session_id: SessionId(u16::from_be_bytes([h[0], h[1]])),
             byte2: h[2],
             byte3: h[3],
-            ptype: HsmsPType::try_from(h[4]).map_err(|_| SecsTransportError::InvalidHeader)?,
-            stype: HsmsSType::try_from(h[5]).map_err(|_| SecsTransportError::InvalidHeader)?,
+            ptype,
+            stype,
             system_byte: SystemByte(u32::from_be_bytes([h[6], h[7], h[8], h[9]])),
         })
     }
@@ -191,9 +198,6 @@ impl TryFrom<&[u8]> for HsmsMessage {
             .try_into()
             .map_err(|_| SecsTransportError::InvalidHeader)?;
         let header = HsmsHeader::try_from(header_bytes)?;
-        if header.ptype != HsmsPType::SECS2 {
-            return Err(SecsTransportError::InvalidHeader);
-        }
 
         let payload = if header.is_data() {
             let body_bytes = &value[14..4 + len];
@@ -303,20 +307,19 @@ impl TryFrom<HsmsMessage> for HsmsControl {
             HsmsSType::DataMessage => unimplemented!(),
             HsmsSType::SelectReq => Ok(HsmsControl::SelectReq),
             HsmsSType::SelectRsp => Ok(HsmsControl::SelectRsp(
-                HsmsSelectStatus::try_from(byte3)
-                    .map_err(|it| SecsTransportError::InvalidHeader)?,
+                HsmsSelectStatus::try_from(byte3).map_err(|_| SecsTransportError::InvalidHeader)?,
             )),
             HsmsSType::DeselectReq => Ok(HsmsControl::DeselectReq),
             HsmsSType::DeselectRsp => Ok(HsmsControl::DeselectRsp(
                 HsmsDeselectStatus::try_from(byte3)
-                    .map_err(|it| SecsTransportError::InvalidHeader)?,
+                    .map_err(|_| SecsTransportError::InvalidHeader)?,
             )),
             HsmsSType::LinktestReq => Ok(HsmsControl::LinktestReq),
             HsmsSType::LinktestRsp => Ok(HsmsControl::LinktestRsp),
             HsmsSType::RejectReq => Ok(HsmsControl::RejectReq(
                 byte2,
                 HsmsRejectReasonCode::try_from(byte3)
-                    .map_err(|it| SecsTransportError::InvalidHeader)?,
+                    .map_err(|_| SecsTransportError::InvalidHeader)?,
                 header.system_byte,
             )),
             HsmsSType::SeparateReq => Ok(HsmsControl::SeparateReq),
@@ -367,5 +370,47 @@ mod tests {
         assert!(!header.need_reply());
         assert_eq!(header.byte2, 0x01);
         assert_eq!(header.byte3, 0x04);
+    }
+
+    #[test]
+    fn test_header_try_from_reports_unsupported_ptype() {
+        let mut bytes = HsmsHeader::control(0, 0, HsmsSType::SelectReq, SystemByte(1)).to_bytes();
+        bytes[4] = 0xFF;
+
+        let err = HsmsHeader::try_from(bytes).unwrap_err();
+
+        assert_eq!(
+            err,
+            SecsTransportError::InvalidHsmsHeader(HsmsHeaderError::UnsupportedPType(0xFF))
+        );
+
+        let SecsTransportError::InvalidHsmsHeader(header_error) = err else {
+            panic!("expected HSMS header error");
+        };
+        assert_eq!(
+            header_error.reject_reason(),
+            Some(HsmsRejectReasonCode::NotSupportedPType)
+        );
+    }
+
+    #[test]
+    fn test_header_try_from_reports_unsupported_stype() {
+        let mut bytes = HsmsHeader::control(0, 0, HsmsSType::SelectReq, SystemByte(1)).to_bytes();
+        bytes[5] = 0xFF;
+
+        let err = HsmsHeader::try_from(bytes).unwrap_err();
+
+        assert_eq!(
+            err,
+            SecsTransportError::InvalidHsmsHeader(HsmsHeaderError::UnsupportedSType(0xFF))
+        );
+
+        let SecsTransportError::InvalidHsmsHeader(header_error) = err else {
+            panic!("expected HSMS header error");
+        };
+        assert_eq!(
+            header_error.reject_reason(),
+            Some(HsmsRejectReasonCode::NotSupportedSType)
+        );
     }
 }

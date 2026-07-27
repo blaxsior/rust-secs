@@ -1,5 +1,7 @@
 use secs_common::TransactionKey;
 
+use crate::io::ByteDataSourceError;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MachineError {
     InvalidState,
@@ -12,8 +14,8 @@ pub enum MachineError {
     TransportSpecific(u16),
 }
 
-pub enum RuntimeError<D, M, T> {
-    DataSource(D),
+pub enum RuntimeError<M, T> {
+    DataSource(ByteDataSourceError),
     Machine(M),
     Timer(T),
 }

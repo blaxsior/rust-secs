@@ -16,14 +16,11 @@ pub enum MachineEvent {
 }
 
 /// 메시지 전송을 담당하는 구조체. 통신 방식은 내부에 숨기고 있음
-pub trait MessageTransport{
+pub trait MessageTransport {
     /// Message
     fn start(&mut self);
 
-    fn write(
-        &mut self,
-        msg: RuntimeMessage,
-    ) -> Result<(), crate::error::MachineError>;
+    fn write(&mut self, msg: RuntimeMessage) -> Result<(), crate::error::MachineError>;
 
     fn read(&mut self) -> Option<RuntimeMessage>;
 

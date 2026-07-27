@@ -179,7 +179,7 @@ impl HsmsSession {
         }
     }
 
-    /// 대상 메시지 처리 가능 여부 검사
+    /// 대상 메시지 처리 가능 여부
     /// select -> not selected
     /// link / data / separate -> selected
     /// reject -> always (기본 optional)
@@ -188,8 +188,8 @@ impl HsmsSession {
         match header.stype {
             HsmsSType::DataMessage => self.state.is_selected(),
             // SELECT는 ACTIVE 주도, PASSIVE 응답
-            HsmsSType::SelectReq => self.state.is_not_selected() && self.role.is_active(),
-            HsmsSType::SelectRsp => self.state.is_not_selected() && self.role.is_passive(),
+            HsmsSType::SelectReq => self.state.is_not_selected(),
+            HsmsSType::SelectRsp => self.state.is_not_selected(),
             // DESELECT는 E37.1 에서 미사용
             HsmsSType::DeselectReq => false,
             HsmsSType::DeselectRsp => false,
@@ -264,7 +264,11 @@ impl HsmsSession {
                     Passive => {
                         if matches!(control, HsmsControl::SelectReq) {
                             // select response 반환
+                            self.cancel_timeout(SecsTimeoutUnit::T7);
+                            // TODO: 외부 신호 받아서 selected 가능 여부 조사 후 메시지 전송
+                            // 현재는 항상 SUCCESS로 간주 중
                             self.send_control(HsmsControl::SelectRsp(HsmsSelectStatus::Success));
+
                             // select로 상태 전이
                             self.change_state(HsmsConnectionState::Selected);
                         } else {
@@ -343,7 +347,7 @@ impl HsmsSession {
                             HsmsControl::RejectReq(..) => {}
                             _ => {
                                 // 이상한 데이터를 수신한 경우 메시지 거절
-                                log::error!("recv reject {:?}", control);
+                                log::error!("recv wrong {:?}", control);
                             }
                         }
                     }
@@ -376,7 +380,7 @@ impl HsmsSession {
                             HsmsControl::RejectReq(..) => {}
                             _ => {
                                 // 이상한 데이터를 수신한 경우 메시지 거절
-                                log::error!("recv reject {:?}", control);
+                                log::error!("recv wrong {:?}", control);
                             }
                         }
                     }
@@ -506,7 +510,7 @@ mod tests {
         assert!(effects.contains(&HsmsSessionEffect::Disconnect));
     }
 
-     /// active not_selected 상태에서 select.rsp 성공 시 timeout clear, 상태 전이
+    /// active not_selected 상태에서 select.rsp 성공 시 timeout clear, 상태 전이
     #[test]
     fn test_active_not_selected_recv_select_rsp_ok_then_move_to_selected() {
         let mut session = get_active_session();
@@ -523,7 +527,6 @@ mod tests {
         assert!(effects.contains(&HsmsSessionEffect::ClearTimeout(SecsTimeoutUnit::T6)));
     }
 
-
     /// connect 성공 시 상태 전이. Select.req 전송 + T6 timeout 시작
     #[test]
     fn test_passive_after_connect() {
@@ -534,7 +537,53 @@ mod tests {
         assert!(effects.contains(&HsmsSessionEffect::StartTimeout(SecsTimeoutUnit::T7)));
     }
 
+    /// passive not_selected 상태에서 select.req 외 요청 받을 시 disconnect
+    #[test]
+    fn test_passive_not_selected_recv_non_select_req() {
+        let mut session = get_passive_session();
+        session.state = HsmsConnectionState::NotSelected;
 
+        // not select.req
+        let effects = session
+            .handle(HsmsSessionSignal::RecvControl(HsmsControl::LinktestReq))
+            .unwrap();
+
+        assert_eq!(session.state, HsmsConnectionState::NotSelected);
+        assert!(effects.contains(&HsmsSessionEffect::Disconnect));
+    }
+
+    /// passive not selected 상태에서 T7 timeout 발생 시 disconnect 요청
+    #[test]
+    fn test_passive_not_selected_t7_timeout_request_disconnect() {
+        let mut session = get_passive_session();
+        session.state = HsmsConnectionState::NotSelected;
+
+        let effects = session
+            .handle(HsmsSessionSignal::Timeout(SecsTimeoutUnit::T7))
+            .unwrap();
+
+        assert!(effects.contains(&HsmsSessionEffect::Disconnect));
+    }
+
+    /// passive not_selected 상태에서 select.req 메시지를 받은 경우 T7 timeout clear, rsp 보내고 select 전이
+    #[test]
+    fn test_passive_not_selected_recv_select_req_move_to_selected() {
+        let mut session = get_passive_session();
+        session.state = HsmsConnectionState::NotSelected;
+
+        // select req 받음
+        let effects = session
+            .handle(HsmsSessionSignal::RecvControl(HsmsControl::SelectReq))
+            .unwrap();
+
+        assert_eq!(session.state, HsmsConnectionState::Selected);
+
+        assert!(effects.contains(&HsmsSessionEffect::ClearTimeout(SecsTimeoutUnit::T7)));
+        assert!(effects.iter().any(|it| matches!(
+            it,
+            &HsmsSessionEffect::SendControl(HsmsControl::SelectRsp(HsmsSelectStatus::Success))
+        )));
+    }
 
     /// T5 대기 중 connect 요청 시 에러 반환
     #[test]

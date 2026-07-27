@@ -2,7 +2,10 @@ use alloc::string::String;
 use secs_ii::{FunctionId, StreamId, error::Secs2Error};
 use thiserror::Error;
 
-use crate::transport::{DeviceId, SecsTimeoutUnit, TransactionKey, secs1::block::Secs1BlockHeader};
+use crate::transport::{
+    DeviceId, SecsTimeoutUnit, TransactionKey, hsms::HsmsRejectReasonCode,
+    secs1::block::Secs1BlockHeader,
+};
 
 ///
 /// SecsTransport 처리 시 예외
@@ -27,6 +30,9 @@ pub enum SecsTransportError {
     #[error("invalid header")]
     InvalidHeader,
 
+    #[error("invalid HSMS header: {0:?}")]
+    InvalidHsmsHeader(HsmsHeaderError),
+
     #[error("invalid block length. expected [10..254], found {0}")]
     InvalidBlockLength(usize),
 
@@ -50,6 +56,24 @@ pub enum SecsTransportError {
 
     #[error("no such transaction {0:?}")]
     NoSuchTransaction(TransactionKey),
+}
+
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum HsmsHeaderError {
+    #[error("unsupported p-type: {0}")]
+    UnsupportedPType(u8),
+
+    #[error("unsupported s-type: {0}")]
+    UnsupportedSType(u8),
+}
+
+impl HsmsHeaderError {
+    pub fn reject_reason(&self) -> Option<HsmsRejectReasonCode> {
+        match self {
+            Self::UnsupportedPType(_) => Some(HsmsRejectReasonCode::NotSupportedPType),
+            Self::UnsupportedSType(_) => Some(HsmsRejectReasonCode::NotSupportedSType),
+        }
+    }
 }
 
 ///

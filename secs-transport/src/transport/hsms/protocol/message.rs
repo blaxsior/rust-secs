@@ -19,7 +19,6 @@ use crate::transport::hsms::protocol::assembler::HsmsAssembler;
 use crate::transport::hsms::protocol::message::transaction::HsmsMessageTransaction;
 use crate::transport::hsms::protocol::message::transaction::HsmsTransactionEffect;
 use crate::transport::hsms::protocol::message::transaction_manager::HsmsTransactionManager;
-use crate::util::time::TimeoutManager;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HsmsWrite {
@@ -35,12 +34,8 @@ pub struct HsmsMessageMachine {
     outgoing_buffer: VecDeque<HsmsWrite>,
     /// hsms 통신을 통해 수신한 블록을 저장하는 큐. poll_read
     outgoing_msgs: VecDeque<HsmsMessage>,
-    /// 외부로 타임아웃 시작 알리는 큐. poll_timeout
-    outgoing_timeouts: VecDeque<TimeoutTicket>,
     /// 외부로 이벤트 알리는 큐. poll_events
     outgoing_events: VecDeque<HsmsMessageEvent>,
-    /// timeout 처리 객체
-    timeout_manager: TimeoutManager,
     transaction_manager: HsmsTransactionManager,
     /// 현재 연결을 식별하는 세션 ID
     session_id: SessionId,
@@ -55,6 +50,7 @@ pub enum HsmsMessageSignal {
 }
 
 /// hsms message 처리 중 발생하는 이벤트
+#[derive(Debug, PartialEq, Eq)]
 pub enum HsmsMessageEvent {
     /// 메시지를 성공적으로 송신
     SendComplete(TransactionKey),
@@ -64,6 +60,10 @@ pub enum HsmsMessageEvent {
     TransactionEnd(TransactionKey),
     /// reply 필요
     ReplyRequired(TransactionKey),
+    /// timeout 시작 요청
+    StartTimeout(SecsTimeoutUnit),
+    /// timeout 해제 요청
+    ClearTimeout(SecsTimeoutUnit),
     /// 메시지 송수신 중 타임아웃 발생
     MessageTimeout(TransactionKey, SecsTimeoutUnit),
     /// 비정상적인 상태 전이 등 에러가 발생한 경우
@@ -76,9 +76,7 @@ impl HsmsMessageMachine {
             msg_assembler: HsmsAssembler::new(),
             outgoing_buffer: VecDeque::new(),
             outgoing_msgs: VecDeque::new(),
-            outgoing_timeouts: VecDeque::new(),
             outgoing_events: VecDeque::new(),
-            timeout_manager: TimeoutManager::new(),
             transaction_manager: HsmsTransactionManager::new(),
             session_id: config.session_id,
         }
@@ -91,15 +89,14 @@ impl HsmsMessageMachine {
 
     /// timeout을 시작한다.
     fn start_timeout(&mut self, timeout: SecsTimeoutUnit) {
-        log::debug!("[message] start timeout {:?}", timeout);
-        let ticket = self.timeout_manager.issue(timeout);
-        self.outgoing_timeouts.push_back(ticket);
+        log::debug!("[message] request start timeout {:?}", timeout);
+        self.emit_event(HsmsMessageEvent::StartTimeout(timeout));
     }
 
     /// timeout을 취소한다.
     fn cancel_timeout(&mut self, timeout: SecsTimeoutUnit) {
-        log::debug!("[message] cancel timeout {:?}", timeout);
-        self.timeout_manager.cancel(timeout);
+        log::debug!("[message] request cancel timeout {:?}", timeout);
+        self.emit_event(HsmsMessageEvent::ClearTimeout(timeout));
     }
 
     /// header로부터 recv transaction_key를 획득
@@ -303,15 +300,7 @@ impl Protocol<&[u8], HsmsMessage, HsmsMessageSignal> for HsmsMessageMachine {
 
     /// timeout 발생 시 처리
     fn handle_timeout(&mut self, timeticket: Self::Time) -> Result<(), Self::Error> {
-        // 1. _now에서 타임아웃 유닛 추출 (구조체에 맞게 메서드 호출)
-        // 예: let expired_unit = now.get_timeout_unit();
         let expired_unit = timeticket.timeout;
-
-        let is_timeout_valid = self.timeout_manager.fire(&timeticket);
-        if !is_timeout_valid {
-            // 이미 취소된 타임아웃인 경우 -> 무시
-            return Ok(());
-        }
 
         // 메시지 전송 중에는 T3 / T8만 다룸
         // T5 / T6 / T7은 세션에서 다룸
@@ -341,7 +330,7 @@ impl Protocol<&[u8], HsmsMessage, HsmsMessageSignal> for HsmsMessageMachine {
     }
 
     fn poll_timeout(&mut self) -> Option<Self::Time> {
-        self.outgoing_timeouts.pop_front()
+        None
     }
 
     fn handle_event(&mut self, signal: HsmsMessageSignal) -> Result<(), Self::Error> {
