@@ -145,7 +145,7 @@ impl HsmsMessageMachine {
         let transaction_key = Self::get_transaction_key(TransferContext::Send, &msg.header);
         let transaction = match self
             .transaction_manager
-            .create_send(&transaction_key, *msg.header())
+            .create_send(&transaction_key, msg.header)
         {
             Some(t) => t,
             None => {

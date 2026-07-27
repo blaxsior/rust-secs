@@ -89,7 +89,7 @@ impl TryFrom<&[u8]> for Secs1Block {
 
         let raw_header: [u8; HEADER_LEN] = value[body_start..body_start + HEADER_LEN]
             .try_into()
-            .map_err(|_| SecsTransportError::InvalidBlockHeader)?;
+            .map_err(|_| SecsTransportError::InvalidHeader)?;
 
         let header = Secs1BlockHeader::try_from(raw_header)?;
         let data = value[body_start + HEADER_LEN..body_end].to_vec();

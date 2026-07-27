@@ -1,5 +1,5 @@
 use crate::transport::TransactionKey;
-use crate::transport::hsms::{HsmsHeader};
+use crate::transport::hsms::HsmsHeader;
 use crate::transport::hsms::protocol::message::transaction::HsmsMessageTransaction;
 use alloc::collections::BTreeMap;
 
@@ -14,7 +14,11 @@ impl HsmsTransactionManager {
         }
     }
 
-    pub fn create_send(&mut self, key: &TransactionKey, header: HsmsHeader) -> Option<&mut HsmsMessageTransaction> {
+    pub fn create_send(
+        &mut self,
+        key: &TransactionKey,
+        header: HsmsHeader,
+    ) -> Option<&mut HsmsMessageTransaction> {
         let transaction = HsmsMessageTransaction::new_send(*key, header);
         self.transaction_map.insert(*key, transaction);
 

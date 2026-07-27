@@ -24,8 +24,8 @@ pub enum SecsTransportError {
     #[error("timeout: {0:?}")]
     Timeout(SecsTimeoutUnit),
 
-    #[error("invalid block")]
-    InvalidBlockHeader,
+    #[error("invalid header")]
+    InvalidHeader,
 
     #[error("invalid block length. expected [10..254], found {0}")]
     InvalidBlockLength(usize),

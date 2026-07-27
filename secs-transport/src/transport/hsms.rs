@@ -127,8 +127,8 @@ impl TryFrom<[u8; 10]> for HsmsHeader {
             session_id: SessionId(u16::from_be_bytes([h[0], h[1]])),
             byte2: h[2],
             byte3: h[3],
-            ptype: HsmsPType::try_from(h[4]).map_err(|_| SecsTransportError::InvalidBlockHeader)?,
-            stype: HsmsSType::try_from(h[5]).map_err(|_| SecsTransportError::InvalidBlockHeader)?,
+            ptype: HsmsPType::try_from(h[4]).map_err(|_| SecsTransportError::InvalidHeader)?,
+            stype: HsmsSType::try_from(h[5]).map_err(|_| SecsTransportError::InvalidHeader)?,
             system_byte: SystemByte(u32::from_be_bytes([h[6], h[7], h[8], h[9]])),
         })
     }
@@ -146,32 +146,24 @@ impl HsmsMessage {
         Self { header, payload }
     }
 
-    pub fn header(&self) -> &HsmsHeader {
-        &self.header
-    }
-
-    pub fn payload(&self) -> Option<&Secs2Variant> {
-        self.payload.as_ref()
-    }
-
     pub fn is_data(&self) -> bool {
-        self.header().is_data()
+        self.header.is_data()
     }
 
     pub fn is_control(&self) -> bool {
-        self.header().is_control()
+        self.header.is_control()
     }
 
     pub fn to_bytes(&self) -> Result<Vec<u8>, SecsTransportError> {
         let mut bytes = Vec::new();
-        let header_bytes = self.header().to_bytes();
+        let header_bytes = self.header.to_bytes();
 
         let mut message_text = Vec::new();
-        if let Some(payload) = self.payload() {
+        if let Some(payload) = &self.payload {
             use secs_ii::convert::secs2::serialize::Encode;
             payload
                 .encode(&mut message_text)
-                .map_err(|_| SecsTransportError::InvalidBlockHeader)?;
+                .map_err(|_| SecsTransportError::InvalidHeader)?;
         }
 
         let len = (header_bytes.len() + message_text.len()) as u32;
@@ -197,17 +189,17 @@ impl TryFrom<&[u8]> for HsmsMessage {
 
         let header_bytes: [u8; 10] = value[4..14]
             .try_into()
-            .map_err(|_| SecsTransportError::InvalidBlockHeader)?;
+            .map_err(|_| SecsTransportError::InvalidHeader)?;
         let header = HsmsHeader::try_from(header_bytes)?;
         if header.ptype != HsmsPType::SECS2 {
-            return Err(SecsTransportError::InvalidBlockHeader);
+            return Err(SecsTransportError::InvalidHeader);
         }
 
         let payload = if header.is_data() {
             let body_bytes = &value[14..4 + len];
             Some(
                 Secs2Variant::try_from(body_bytes)
-                    .map_err(|_| SecsTransportError::InvalidBlockHeader)?,
+                    .map_err(|_| SecsTransportError::InvalidHeader)?,
             )
         } else {
             None
@@ -295,8 +287,41 @@ pub enum HsmsControl {
     DeselectRsp(HsmsDeselectStatus),
     LinktestReq,
     LinktestRsp,
-    RejectReq(u8, HsmsRejectReasonCode),
+    RejectReq(u8, HsmsRejectReasonCode, SystemByte),
     SeparateReq,
+}
+
+impl TryFrom<HsmsMessage> for HsmsControl {
+    type Error = SecsTransportError;
+
+    fn try_from(msg: HsmsMessage) -> Result<HsmsControl, Self::Error> {
+        let header = msg.header;
+        let byte2 = header.byte2;
+        let byte3 = header.byte3;
+
+        match header.stype {
+            HsmsSType::DataMessage => unimplemented!(),
+            HsmsSType::SelectReq => Ok(HsmsControl::SelectReq),
+            HsmsSType::SelectRsp => Ok(HsmsControl::SelectRsp(
+                HsmsSelectStatus::try_from(byte3)
+                    .map_err(|it| SecsTransportError::InvalidHeader)?,
+            )),
+            HsmsSType::DeselectReq => Ok(HsmsControl::DeselectReq),
+            HsmsSType::DeselectRsp => Ok(HsmsControl::DeselectRsp(
+                HsmsDeselectStatus::try_from(byte3)
+                    .map_err(|it| SecsTransportError::InvalidHeader)?,
+            )),
+            HsmsSType::LinktestReq => Ok(HsmsControl::LinktestReq),
+            HsmsSType::LinktestRsp => Ok(HsmsControl::LinktestRsp),
+            HsmsSType::RejectReq => Ok(HsmsControl::RejectReq(
+                byte2,
+                HsmsRejectReasonCode::try_from(byte3)
+                    .map_err(|it| SecsTransportError::InvalidHeader)?,
+                header.system_byte,
+            )),
+            HsmsSType::SeparateReq => Ok(HsmsControl::SeparateReq),
+        }
+    }
 }
 
 #[cfg(test)]

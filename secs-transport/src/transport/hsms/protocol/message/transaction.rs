@@ -285,10 +285,16 @@ mod tests {
     use secs_ii::{FunctionId, StreamId, item::Secs2Variant};
 
     use crate::transport::{
-        SecsTimeoutUnit, SystemByte, TransactionKey, TransactionOwner, error::SecsTransportError, hsms::{
-            HsmsHeader, HsmsMessage, protocol::message::{HsmsMessageSignal, transaction::{
+        SecsTimeoutUnit, SystemByte, TransactionKey, TransactionOwner,
+        error::SecsTransportError,
+        hsms::{
+            HsmsHeader, HsmsMessage,
+            protocol::message::{
+                HsmsMessageSignal,
+                transaction::{
                     HsmsMessageTransaction, HsmsTransactionEffect, HsmsTransactionState,
-                }},
+                },
+            },
         },
     };
 
@@ -341,7 +347,7 @@ mod tests {
         let owner = TransactionOwner::Local;
         let key = TransactionKey::new(owner, system_byte);
 
-        let mut transaction = HsmsMessageTransaction::new_send(key, *msg.header());
+        let mut transaction = HsmsMessageTransaction::new_send(key, msg.header);
 
         let signal = HsmsMessageSignal::SendSuccess(msg.header);
         transaction.handle_signal(signal);
@@ -381,7 +387,7 @@ mod tests {
         let owner = TransactionOwner::Local;
         let key = TransactionKey::new(owner, system_byte);
 
-        let mut transaction = HsmsMessageTransaction::new_send(key, *msg.header());
+        let mut transaction = HsmsMessageTransaction::new_send(key, msg.header);
 
         let signal = HsmsMessageSignal::SendSuccess(msg.header);
         transaction.handle_signal(signal);
@@ -407,7 +413,7 @@ mod tests {
         let owner = TransactionOwner::Local;
         let key = TransactionKey::new(owner, system_byte);
 
-        let mut transaction = HsmsMessageTransaction::new_send(key, *msg.header());
+        let mut transaction = HsmsMessageTransaction::new_send(key, msg.header);
 
         transaction.handle_signal(HsmsMessageSignal::SendSuccess(msg.header));
         let _ = drain_effects(&mut transaction);
