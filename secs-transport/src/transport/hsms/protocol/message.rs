@@ -166,7 +166,10 @@ impl HsmsMessageMachine {
         let transaction_key = Self::get_transaction_key(TransferContext::Recv, &msg.header);
 
         if !self.is_known_session(&msg.header) {
-            log::warn!("[message] unknown session id: {:?}. reject it", msg.header.session_id);
+            log::warn!(
+                "[message] unknown session id: {:?}. reject it",
+                msg.header.session_id
+            );
             // self.handle_unknown_device(block);
             return;
         }

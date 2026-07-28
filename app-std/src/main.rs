@@ -6,7 +6,8 @@ use std::time::{Duration, Instant};
 use secs_common::{ConnectionRole, SecsTimeoutUnit, SystemByteSource, TimeoutId, TimeoutTicket};
 use secs_ii::item::Secs2Variant;
 use secs_ii::{FunctionId, Secs2Message, StreamId};
-use secs_runtime_core::{MessageTransport, RuntimeMessage};
+use secs_runtime::{HandlerError, SecsRuntime, SecsService, ServiceContext, TimeoutConfig};
+use secs_runtime_core::{RuntimeTimer, Timer};
 use secs_runtime_std::TcpServerDataSource;
 use secs_transport::transport::SessionId;
 use secs_transport::transport::hsms::config::HsmsTransportConfig;
@@ -14,43 +15,81 @@ use secs_transport::transport::hsms::protocol::HsmsTransport;
 
 struct AppTimer {
     deadlines: HashMap<TimeoutId, (Instant, TimeoutTicket)>,
+    next_id: u64,
 }
 
 impl AppTimer {
     fn new() -> Self {
         Self {
             deadlines: HashMap::new(),
+            next_id: 1,
         }
     }
+}
 
-    fn start(&mut self, ticket: TimeoutTicket, duration: Duration) {
-        self.deadlines
-            .insert(ticket.id, (Instant::now() + duration, ticket));
+impl Timer for AppTimer {
+    type Error = ();
+    type Duration = Duration;
+    type Handle = TimeoutId;
+
+    fn start_after(&mut self, duration: Self::Duration) -> Result<Self::Handle, Self::Error> {
+        let id = TimeoutId(self.next_id);
+        self.next_id = self.next_id.wrapping_add(1);
+        self.deadlines.insert(
+            id,
+            (
+                Instant::now() + duration,
+                TimeoutTicket {
+                    id,
+                    timeout: SecsTimeoutUnit::T8,
+                },
+            ),
+        );
+        Ok(id)
     }
 
-    fn poll_expired(&mut self) -> Vec<TimeoutTicket> {
+    fn cancel(&mut self, handle: Self::Handle) -> Result<(), Self::Error> {
+        self.deadlines.remove(&handle);
+        Ok(())
+    }
+}
+
+impl RuntimeTimer for AppTimer {
+    fn start_secs_timeout(
+        &mut self,
+        ticket: TimeoutTicket,
+        duration: Self::Duration,
+    ) -> Result<Self::Handle, Self::Error> {
+        self.deadlines
+            .insert(ticket.id, (Instant::now() + duration, ticket));
+        Ok(ticket.id)
+    }
+
+    fn cancel_secs_timeout(&mut self, handle: Self::Handle) -> Result<(), Self::Error> {
+        self.cancel(handle)
+    }
+
+    fn poll_secs_timeout(&mut self) -> Result<Option<TimeoutTicket>, Self::Error> {
         let now = Instant::now();
         let expired = self
             .deadlines
             .iter()
-            .filter_map(|(id, (deadline, _))| (*deadline <= now).then_some(*id))
-            .collect::<Vec<_>>();
+            .find_map(|(id, (deadline, _))| (*deadline <= now).then_some(*id));
 
-        expired
-            .into_iter()
-            .filter_map(|id| self.deadlines.remove(&id).map(|(_, ticket)| ticket))
-            .collect()
+        Ok(expired.and_then(|id| self.deadlines.remove(&id).map(|(_, ticket)| ticket)))
     }
 }
 
-fn timeout_duration(config: &HsmsTransportConfig, unit: SecsTimeoutUnit) -> Duration {
-    match unit {
-        SecsTimeoutUnit::T3(_) => config.t3_timeout,
-        SecsTimeoutUnit::T5 => config.t5_timeout,
-        SecsTimeoutUnit::T6 => config.t6_timeout,
-        SecsTimeoutUnit::T7 => config.t7_timeout,
-        SecsTimeoutUnit::T8 => config.t8_timeout,
-        _ => Duration::from_secs(1),
+fn timeout_config(config: &HsmsTransportConfig) -> TimeoutConfig<Duration> {
+    TimeoutConfig {
+        t1: Duration::from_secs(1),
+        t2: Duration::from_secs(1),
+        t3: config.t3_timeout,
+        t4: Duration::from_secs(1),
+        t5: config.t5_timeout,
+        t6: config.t6_timeout,
+        t7: config.t7_timeout,
+        t8: config.t8_timeout,
     }
 }
 
@@ -68,12 +107,12 @@ fn build_config(remote_addr: SocketAddr) -> HsmsTransportConfig {
     }
 }
 
-fn build_s1f14_reply(request: &RuntimeMessage) -> Option<RuntimeMessage> {
-    if request.stream() != StreamId(1) || request.function() != FunctionId(13) {
+fn build_s1f14_reply(request: &Secs2Message) -> Option<Secs2Message> {
+    if request.stream != StreamId(1) || request.function != FunctionId(13) {
         return None;
     }
 
-    let payload = Secs2Message::new(
+    Some(Secs2Message::new(
         StreamId(1),
         FunctionId(14),
         false,
@@ -81,8 +120,31 @@ fn build_s1f14_reply(request: &RuntimeMessage) -> Option<RuntimeMessage> {
             Secs2Variant::ascii("TESTLINE1"),
             Secs2Variant::ascii("TESTLINE2"),
         ])),
-    );
-    Some(RuntimeMessage::new_local(request.system_byte(), payload))
+    ))
+}
+
+struct EstablishCommunicationService;
+
+impl SecsService for EstablishCommunicationService {
+    fn serve(&mut self, ctx: &mut ServiceContext) -> Result<(), HandlerError> {
+        let Some(message) = ctx.recv() else {
+            return Ok(());
+        };
+
+        log::debug!(
+            "received routed message: S{}F{}, need_reply={}",
+            message.stream.0,
+            message.function.0,
+            message.need_reply
+        );
+
+        if let Some(reply) = build_s1f14_reply(&message) {
+            log::debug!("send reply: S1F14");
+            ctx.send(reply)?;
+        }
+
+        Ok(())
+    }
 }
 
 fn main() {
@@ -99,51 +161,35 @@ fn main() {
 
     let config = build_config(local_addr);
     let source = TcpServerDataSource::new(local_addr);
-    let mut transport = HsmsTransport::new(&config, Box::new(source), SystemByteSource::new());
-    let mut timer = AppTimer::new();
+    let transport = HsmsTransport::new(&config, Box::new(source), SystemByteSource::new());
+    let timer = AppTimer::new();
+    let mut runtime = SecsRuntime::new(
+        transport,
+        timer,
+        SystemByteSource::new(),
+        timeout_config(&config),
+    );
+    runtime.register_service(StreamId(1), FunctionId(13), EstablishCommunicationService);
 
-    println!("starting HSMS active transport: {}", local_addr);
-    if let Err(error) = transport.start() {
-        eprintln!("failed to start transport: {:?}", error);
+    log::debug!("starting HSMS active transport: {}", local_addr);
+    if let Err(error) = runtime.start() {
+        log::error!("failed to start runtime: {:?}", error);
         return;
     }
 
     loop {
-        if let Err(error) = transport.poll() {
-            eprintln!("transport poll failed: {:?}", error);
+        if let Err(error) = runtime.tick() {
+            log::error!("runtime tick failed: {:?}", error);
             break;
         }
 
-        while let Some(ticket) = transport.poll_timeout() {
-            let duration = timeout_duration(&config, ticket.timeout);
-            println!("start timeout: {:?} for {:?}", ticket, duration);
-            timer.start(ticket, duration);
-        }
-
-        for ticket in timer.poll_expired() {
-            println!("timeout expired: {:?}", ticket);
-            if let Err(error) = transport.handle_timeout(ticket) {
-                eprintln!("transport timeout handling failed: {:?}", error);
-                break;
-            }
-        }
-
-        while let Some(message) = transport.poll_recv() {
-            println!(
-                "received message: S{}F{}, system_byte={:?}, need_reply={}",
-                message.stream().0,
-                message.function().0,
-                message.system_byte(),
-                message.need_reply()
+        while let Some(message) = runtime.poll_inbox() {
+            log::debug!(
+                "received unrouted message: S{}F{}, need_reply={}",
+                message.stream.0,
+                message.function.0,
+                message.need_reply
             );
-
-            if let Some(reply) = build_s1f14_reply(&message) {
-                println!("send reply: S1F14, system_byte={:?}", reply.system_byte());
-                if let Err(error) = transport.send(reply) {
-                    eprintln!("failed to send reply: {:?}", error);
-                    break;
-                }
-            }
         }
 
         thread::sleep(Duration::from_millis(10));

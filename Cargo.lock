@@ -66,8 +66,10 @@ name = "app-std"
 version = "0.1.0"
 dependencies = [
  "env_logger",
+ "log",
  "secs-common",
  "secs-ii",
+ "secs-runtime",
  "secs-runtime-core",
  "secs-runtime-std",
  "secs-transport",

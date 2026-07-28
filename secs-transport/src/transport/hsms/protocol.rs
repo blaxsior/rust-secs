@@ -311,6 +311,26 @@ impl HsmsTransport {
     ) -> Result<(), MachineError> {
         self.handle_session_signal(HsmsSessionSignal::Timeout(unit))
     }
+
+    pub fn linktest(&mut self) -> Result<(), MachineError> {
+        match self.session.linktest() {
+            Ok(effects) => self.handle_effects(effects),
+            Err(error) => {
+                log::error!("hsms session error occured: {:?}", error);
+                Err(MachineError::InvalidState)
+            }
+        }
+    }
+
+    pub fn separate(&mut self) -> Result<(), MachineError> {
+        match self.session.separate() {
+            Ok(effects) => self.handle_effects(effects),
+            Err(error) => {
+                log::error!("hsms session error occured: {:?}", error);
+                Err(MachineError::InvalidState)
+            }
+        }
+    }
 }
 
 impl MessageTransport for HsmsTransport {

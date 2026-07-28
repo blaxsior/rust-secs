@@ -2,14 +2,12 @@
 
 extern crate alloc;
 
-pub mod client;
 pub mod error;
 pub mod io;
 pub mod machine;
 pub mod message;
 pub mod timer;
 
-pub use client::{TransportClient, TransportClientEvent};
 pub use error::{MachineError, RuntimeError};
 pub use io::{ByteDataSource, ByteDataSourceError};
 pub use machine::{MachineEvent, MachineSignal, MessageTransport};

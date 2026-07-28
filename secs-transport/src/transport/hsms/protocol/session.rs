@@ -268,7 +268,6 @@ impl HsmsSession {
                             // TODO: 외부 신호 받아서 selected 가능 여부 조사 후 메시지 전송
                             // 현재는 항상 SUCCESS로 간주 중
                             self.send_control(HsmsControl::SelectRsp(HsmsSelectStatus::Success));
-
                             // select로 상태 전이
                             self.change_state(HsmsConnectionState::Selected);
                         } else {
