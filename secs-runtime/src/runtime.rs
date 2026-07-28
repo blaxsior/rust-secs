@@ -9,7 +9,7 @@ use core::{
 };
 
 use secs_ii::{FunctionId, Secs2Message, StreamId};
-use secs_runtime_core::{MessageTransport, RuntimeMessage, RuntimeTimer, SystemByteSource};
+use secs_runtime_core::{MessageTransport, RuntimeMessage, SecsTimer, SystemByteSource};
 
 use crate::{
     error::{CallError, HandlerError, SecsRuntimeError},
@@ -41,7 +41,7 @@ struct RuntimeTask {
 
 pub struct SecsRuntime<T, R>
 where
-    R: RuntimeTimer,
+    R: SecsTimer,
 {
     transport: T,
     timer: R,
@@ -54,7 +54,7 @@ where
 
 impl<T, R> SecsRuntime<T, R>
 where
-    R: RuntimeTimer,
+    R: SecsTimer,
 {
     pub fn new(
         transport: T,
@@ -103,7 +103,7 @@ where
 impl<T, R> SecsRuntime<T, R>
 where
     T: MessageTransport,
-    R: RuntimeTimer,
+    R: SecsTimer,
     R::Duration: Copy,
 {
     pub fn start(&mut self) -> Result<(), SecsRuntimeError<R::Error>> {
@@ -124,18 +124,14 @@ where
         while let Some(ticket) = self.transport.poll_timeout() {
             let duration = self.timeout_config.duration_for(ticket.timeout);
             self.timer
-                .start_secs_timeout(ticket, duration)
+                .start_timeout(ticket, duration)
                 .map_err(SecsRuntimeError::Timer)?;
         }
         Ok(())
     }
 
     fn handle_expired_timeouts(&mut self) -> Result<(), SecsRuntimeError<R::Error>> {
-        while let Some(ticket) = self
-            .timer
-            .poll_secs_timeout()
-            .map_err(SecsRuntimeError::Timer)?
-        {
+        while let Some(ticket) = self.timer.poll_timeout().map_err(SecsRuntimeError::Timer)? {
             self.transport
                 .handle_timeout(ticket)
                 .map_err(SecsRuntimeError::Transport)?;

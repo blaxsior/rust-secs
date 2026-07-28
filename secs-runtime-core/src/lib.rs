@@ -12,7 +12,7 @@ pub use error::{MachineError, RuntimeError};
 pub use io::{ByteDataSource, ByteDataSourceError};
 pub use machine::{MachineEvent, MachineSignal, MessageTransport};
 pub use message::RuntimeMessage;
-pub use timer::{RuntimeTimer, TimeoutTicket, Timer};
+pub use timer::{SecsTimer, TimeoutTicket};
 
 pub use secs_common::{
     ConnectionRole, DeviceId, SecsTimeoutUnit, SessionId, SystemByte, SystemByteSource, TimeoutId,

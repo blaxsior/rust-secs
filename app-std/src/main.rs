@@ -1,84 +1,15 @@
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use secs_common::{ConnectionRole, SecsTimeoutUnit, SystemByteSource, TimeoutId, TimeoutTicket};
+use secs_common::{ConnectionRole, SystemByteSource};
 use secs_ii::item::Secs2Variant;
 use secs_ii::{FunctionId, Secs2Message, StreamId};
 use secs_runtime::{HandlerError, SecsRuntime, SecsService, ServiceContext, TimeoutConfig};
-use secs_runtime_core::{RuntimeTimer, Timer};
-use secs_runtime_std::TcpServerDataSource;
+use secs_runtime_std::{StdSecsTimer, TcpServerDataSource};
 use secs_transport::transport::SessionId;
 use secs_transport::transport::hsms::config::HsmsTransportConfig;
 use secs_transport::transport::hsms::protocol::HsmsTransport;
-
-struct AppTimer {
-    deadlines: HashMap<TimeoutId, (Instant, TimeoutTicket)>,
-    next_id: u64,
-}
-
-impl AppTimer {
-    fn new() -> Self {
-        Self {
-            deadlines: HashMap::new(),
-            next_id: 1,
-        }
-    }
-}
-
-impl Timer for AppTimer {
-    type Error = ();
-    type Duration = Duration;
-    type Handle = TimeoutId;
-
-    fn start_after(&mut self, duration: Self::Duration) -> Result<Self::Handle, Self::Error> {
-        let id = TimeoutId(self.next_id);
-        self.next_id = self.next_id.wrapping_add(1);
-        self.deadlines.insert(
-            id,
-            (
-                Instant::now() + duration,
-                TimeoutTicket {
-                    id,
-                    timeout: SecsTimeoutUnit::T8,
-                },
-            ),
-        );
-        Ok(id)
-    }
-
-    fn cancel(&mut self, handle: Self::Handle) -> Result<(), Self::Error> {
-        self.deadlines.remove(&handle);
-        Ok(())
-    }
-}
-
-impl RuntimeTimer for AppTimer {
-    fn start_secs_timeout(
-        &mut self,
-        ticket: TimeoutTicket,
-        duration: Self::Duration,
-    ) -> Result<Self::Handle, Self::Error> {
-        self.deadlines
-            .insert(ticket.id, (Instant::now() + duration, ticket));
-        Ok(ticket.id)
-    }
-
-    fn cancel_secs_timeout(&mut self, handle: Self::Handle) -> Result<(), Self::Error> {
-        self.cancel(handle)
-    }
-
-    fn poll_secs_timeout(&mut self) -> Result<Option<TimeoutTicket>, Self::Error> {
-        let now = Instant::now();
-        let expired = self
-            .deadlines
-            .iter()
-            .find_map(|(id, (deadline, _))| (*deadline <= now).then_some(*id));
-
-        Ok(expired.and_then(|id| self.deadlines.remove(&id).map(|(_, ticket)| ticket)))
-    }
-}
 
 fn timeout_config(config: &HsmsTransportConfig) -> TimeoutConfig<Duration> {
     TimeoutConfig {
@@ -162,7 +93,7 @@ fn main() {
     let config = build_config(local_addr);
     let source = TcpServerDataSource::new(local_addr);
     let transport = HsmsTransport::new(&config, Box::new(source), SystemByteSource::new());
-    let timer = AppTimer::new();
+    let timer = StdSecsTimer::new();
     let mut runtime = SecsRuntime::new(
         transport,
         timer,
