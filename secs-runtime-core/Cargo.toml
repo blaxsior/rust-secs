@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 secs-common.workspace = true
 secs-ii.workspace = true
+thiserror.workspace = true

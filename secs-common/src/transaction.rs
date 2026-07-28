@@ -19,13 +19,6 @@ pub struct TransactionKey {
 }
 
 impl TransactionKey {
-    pub fn next(&self) -> Self {
-        Self {
-            owner: self.owner,
-            system_byte: self.system_byte.next(),
-        }
-    }
-
     pub fn new(owner: TransactionOwner, system_byte: SystemByte) -> Self {
         Self { owner, system_byte }
     }

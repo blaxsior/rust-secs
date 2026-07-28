@@ -13,10 +13,10 @@ pub use client::{TransportClient, TransportClientEvent};
 pub use error::{MachineError, RuntimeError};
 pub use io::{ByteDataSource, ByteDataSourceError};
 pub use machine::{MachineEvent, MachineSignal, MessageTransport};
-pub use message::{RuntimeMessage, SystemByteSource};
+pub use message::RuntimeMessage;
 pub use timer::{RuntimeTimer, TimeoutTicket, Timer};
 
 pub use secs_common::{
-    ConnectionRole, DeviceId, SecsTimeoutUnit, SessionId, SystemByte, TimeoutId, TransactionKey,
-    TransactionOwner, TransferContext,
+    ConnectionRole, DeviceId, SecsTimeoutUnit, SessionId, SystemByte, SystemByteSource, TimeoutId,
+    TransactionKey, TransactionOwner, TransferContext,
 };

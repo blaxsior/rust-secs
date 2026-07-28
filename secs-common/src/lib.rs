@@ -6,6 +6,6 @@ pub mod timeout;
 pub mod transaction;
 
 pub use connection::ConnectionRole;
-pub use id::{DeviceId, SessionId, SystemByte};
+pub use id::{DeviceId, SessionId, SystemByte, SystemByteSource};
 pub use timeout::{SecsTimeoutUnit, TimeoutId, TimeoutTicket};
 pub use transaction::{TransactionKey, TransactionOwner, TransferContext};

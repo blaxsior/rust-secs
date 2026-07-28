@@ -1,10 +1,6 @@
 use secs_common::{SystemByte, TransactionKey, TransactionOwner};
 use secs_ii::{FunctionId, Secs2Message, StreamId};
 
-pub trait SystemByteSource {
-    fn next_system_byte(&mut self) -> SystemByte;
-}
-
 pub struct RuntimeMessage {
     pub transaction_key: TransactionKey,
     pub payload: Secs2Message,

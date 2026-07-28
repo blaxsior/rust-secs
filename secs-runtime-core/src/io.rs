@@ -1,29 +1,31 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use thiserror::Error;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum ByteDataSourceError {
-    /// 이미 열려 있는 source에 open을 요청함
-    AlreadyOpen,
     /// 열려 있지 않은 source에 read/write/close를 요청함
+    #[error("data source is not open")]
     NotOpen,
     /// 연결 시도 실패
+    #[error("failed to open data source")]
     OpenFailed,
     /// 연결 종료 시도 실패
+    #[error("failed to close data source")]
     CloseFailed,
     /// 상대방이 정상적으로 연결을 종료했거나, 장치가 분리됨
+    #[error("data source disconnected")]
     Disconnected,
     /// read/write가 일시적으로 준비되지 않음
+    #[error("data source is not ready")]
     WouldBlock,
     /// 설정된 I/O 대기 시간이 초과됨
+    #[error("data source I/O timed out")]
     TimedOut,
     /// read 동작 실패
+    #[error("failed to read from data source")]
     ReadFailed,
     /// write 동작 실패
+    #[error("failed to write to data source")]
     WriteFailed,
-    /// 출력 버퍼가 가득 차서 현재 write 불가
-    WriteBufferFull,
-    /// 입력 버퍼가 부족해서 현재 read 불가
-    ReadBufferTooSmall,
-    /// 구현체 고유 에러
-    SourceSpecific(u16),
 }
 
 impl ByteDataSourceError {
@@ -32,10 +34,7 @@ impl ByteDataSourceError {
     }
 
     pub fn is_temporary(self) -> bool {
-        matches!(
-            self,
-            Self::WouldBlock | Self::TimedOut | Self::WriteBufferFull
-        )
+        matches!(self, Self::WouldBlock | Self::TimedOut)
     }
 
     pub fn is_read_error(self) -> bool {
@@ -46,8 +45,6 @@ impl ByteDataSourceError {
                 | Self::WouldBlock
                 | Self::TimedOut
                 | Self::ReadFailed
-                | Self::ReadBufferTooSmall
-                | Self::SourceSpecific(_)
         )
     }
 
@@ -59,8 +56,6 @@ impl ByteDataSourceError {
                 | Self::WouldBlock
                 | Self::TimedOut
                 | Self::WriteFailed
-                | Self::WriteBufferFull
-                | Self::SourceSpecific(_)
         )
     }
 }
