@@ -42,7 +42,11 @@ pub struct HsmsTransport {
 }
 
 impl HsmsTransport {
-    pub fn new(config: &HsmsTransportConfig, data_source: Box<dyn ByteDataSource>, sb_source: SystemByteSource) -> Self {
+    pub fn new(
+        config: &HsmsTransportConfig,
+        data_source: Box<dyn ByteDataSource>,
+        sb_source: SystemByteSource,
+    ) -> Self {
         Self {
             session: HsmsSession::new(config.session_id, config.connection_mode),
             machine: HsmsMessageMachine::new(config),
@@ -160,6 +164,7 @@ impl HsmsTransport {
                 }
             },
             HsmsSessionEffect::SendControl(control) => {
+                log::debug!("send hsms control: {:?}", control);
                 let msg = self.control_to_message(control);
                 self.pending_messages.push_back(msg);
             }
@@ -211,6 +216,7 @@ impl HsmsTransport {
             if msg.is_control() {
                 let control =
                     HsmsControl::try_from(msg).map_err(|_| MachineError::InvalidMessage)?;
+                log::debug!("recv hsms control: {:?}", control);
                 self.handle_session_signal(HsmsSessionSignal::RecvControl(control))?;
             } else {
                 self.outgoing_messages.push_back(msg);
@@ -269,6 +275,7 @@ impl HsmsTransport {
 
     fn poll_source_read(&mut self) -> Result<(), MachineError> {
         if !self.data_source.is_open() {
+            log::debug!("source not opened");
             return Ok(());
         }
 
@@ -308,6 +315,7 @@ impl HsmsTransport {
 
 impl MessageTransport for HsmsTransport {
     fn start(&mut self) -> Result<(), MachineError> {
+        log::debug!("start hsms transport");
         match self.session.connect() {
             Ok(effects) => self.handle_effects(effects),
             Err(error) => {

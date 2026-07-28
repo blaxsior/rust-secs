@@ -1,14 +1,12 @@
-Never
-Never change a file's encoding, BOM, or line endings unless explicitly requested.
-Never rewrite an entire file for a small change; prefer minimal patches.
-Never use editing methods that may corrupt UTF-8 or non-ASCII text.
-Never leave corrupted text (e.g. �, broken Korean characters) in modified files. Restore the original file if corruption is detected.
-Never modify code, create files, or apply patches when the user is only asking for opinions, analysis, reviews, or design discussions.
-Never assume discussion implies approval to implement.
-Never perform unrelated refactoring or formatting while making a requested change.
 Always
-Preserve the original file encoding and formatting.
-Verify that non-ASCII text remains intact after edits.
-Discuss and propose a plan before implementation.
-Wait for explicit implementation requests such as "implement", "apply", "modify", or "create" before changing files.
-Keep changes as small and focused as possible.
+- Discuss a plan before implementation and wait for explicit requests such as "implement", "apply", "modify", or "create".
+- Keep changes minimal, focused, and unrelated refactoring-free.
+- Preserve file encoding, BOM, line endings, formatting, and non-ASCII text.
+- Prefer Rust `filename.rs` modules over directory `mod.rs` modules.
+
+Never
+- Modify code, create files, or apply patches for design discussion, analysis, opinions, or reviews only.
+- Assume discussion implies approval to implement.
+- Use editing methods that may corrupt UTF-8 or non-ASCII text.
+- Leave corrupted text in modified files; restore the original file if corruption is detected.
+- Introduce Rust `mod.rs` module files unless explicitly requested or required by the existing structure.

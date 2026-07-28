@@ -166,7 +166,7 @@ impl HsmsMessageMachine {
         let transaction_key = Self::get_transaction_key(TransferContext::Recv, &msg.header);
 
         if !self.is_known_session(&msg.header) {
-            log::warn!("[message] unknown device id: {:?}", msg.header.session_id);
+            log::warn!("[message] unknown session id: {:?}. reject it", msg.header.session_id);
             // self.handle_unknown_device(block);
             return;
         }
@@ -266,6 +266,7 @@ impl Protocol<&[u8], HsmsMessage, HsmsMessageSignal> for HsmsMessageMachine {
 
     // recv
     fn handle_read(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+        log::debug!("read bytes {}", bytes.len());
         // 데이터가 들어왔으므로 t8 timeout 초기화
         self.cancel_timeout(SecsTimeoutUnit::T8);
 
