@@ -92,7 +92,7 @@ where
             Ok(())
         };
 
-        self.listener = None;
+        // self.listener = None;
         close_result
     }
 

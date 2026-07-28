@@ -157,6 +157,20 @@ impl HsmsTransport {
                 Ok(()) => {
                     log::debug!("success to close datasource");
                     self.handle_session_signal(HsmsSessionSignal::Disconnected)?;
+
+                    // 공식 명세는 close TCP/IP connection 정도로 표현하나,
+                    // 다음 연결을 위해 accept 상태가 되는 것이 자연스러움
+                    if self.session.is_passive() {
+                        log::debug!("passive transport will wait for next peer");
+                        let effects = self.session.connect().map_err(|error| {
+                            log::error!(
+                                "failed to re-open passive hsms session after disconnect: {:?}",
+                                error
+                            );
+                            MachineError::InvalidState
+                        })?;
+                        self.handle_effects(effects)?;
+                    }
                 }
                 Err(error) => {
                     log::error!("failed to close datasource. reason = {:?}", error);

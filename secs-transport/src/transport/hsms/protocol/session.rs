@@ -88,6 +88,14 @@ impl HsmsSession {
     }
 
     /// TCP connect 요청 전송
+    pub fn is_passive(&self) -> bool {
+        self.role.is_passive()
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.role.is_active()
+    }
+
     pub fn connect(&mut self) -> HsmsSessionResult<Vec<HsmsSessionEffect>> {
         if self.state.is_connected() {
             log::error!("already connected");
