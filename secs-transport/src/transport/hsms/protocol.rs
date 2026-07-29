@@ -2,7 +2,9 @@ use alloc::boxed::Box;
 use alloc::collections::VecDeque;
 
 use sansio::Protocol;
-use secs_common::{SystemByteSource, TimeoutTicket, TransactionKey, TransferContext};
+use secs_common::{
+    SecsTimeoutUnit, SystemByteSource, TimeoutTicket, TransactionKey, TransferContext,
+};
 use secs_ii::Secs2Message;
 use secs_runtime_core::{
     ByteDataSource, ByteDataSourceError, MachineError, MessageTransport, RuntimeMessage,
@@ -35,6 +37,7 @@ pub struct HsmsTransport {
     pending_messages: VecDeque<HsmsMessage>,
     pending_writes: VecDeque<HsmsWrite>,
     outgoing_messages: VecDeque<HsmsMessage>,
+    outgoing_expired_timeouts: VecDeque<SecsTimeoutUnit>,
     outgoing_timeouts: VecDeque<TimeoutTicket>,
     timeout_manager: TimeoutManager,
     sb_source: SystemByteSource,
@@ -55,6 +58,7 @@ impl HsmsTransport {
             pending_messages: VecDeque::new(),
             pending_writes: VecDeque::new(),
             outgoing_messages: VecDeque::new(),
+            outgoing_expired_timeouts: VecDeque::new(),
             outgoing_timeouts: VecDeque::new(),
             timeout_manager: TimeoutManager::new(),
             session_id: config.session_id,
@@ -201,6 +205,7 @@ impl HsmsTransport {
                 HsmsMessageEvent::ClearTimeout(timeout) => {
                     self.timeout_manager.cancel(timeout);
                 }
+                HsmsMessageEvent::MessageTimeout(..) => {}
                 HsmsMessageEvent::ErrorOccured(error) => {
                     log::error!("hsms message error occured: {:?}", error);
                     return Err(MachineError::InvalidMessage);
@@ -406,6 +411,7 @@ impl MessageTransport for HsmsTransport {
             }
         }?;
 
+        self.outgoing_expired_timeouts.push_back(unit);
         self.handle_machine_events()?;
         self.process_received_messages()?;
         self.process_pending_messages()?;
@@ -415,5 +421,9 @@ impl MessageTransport for HsmsTransport {
 
     fn poll_timeout(&mut self) -> Option<TimeoutTicket> {
         self.outgoing_timeouts.pop_front()
+    }
+
+    fn poll_expired_timeout(&mut self) -> Option<SecsTimeoutUnit> {
+        self.outgoing_expired_timeouts.pop_front()
     }
 }

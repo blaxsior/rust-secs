@@ -9,7 +9,9 @@ use core::{
 };
 
 use secs_ii::{FunctionId, Secs2Message, StreamId};
-use secs_runtime_core::{MessageTransport, RuntimeMessage, SecsTimer, SystemByteSource};
+use secs_runtime_core::{
+    MessageTransport, RuntimeMessage, SecsTimeoutUnit, SecsTimer, SystemByteSource,
+};
 
 use crate::{
     error::{CallError, HandlerError, SecsRuntimeError},
@@ -119,6 +121,7 @@ where
         self.transport.poll().map_err(SecsRuntimeError::Transport)?;
         self.start_transport_timeouts()?;
         self.handle_expired_timeouts()?;
+        self.complete_expired_timeout_calls();
         self.process_recv_messages()?;
         self.process_commands()?;
         self.poll_tasks()?;
@@ -137,9 +140,11 @@ where
 
     fn handle_expired_timeouts(&mut self) -> Result<(), SecsRuntimeError<R::Error>> {
         while let Some(ticket) = self.timer.poll_timeout().map_err(SecsRuntimeError::Timer)? {
-            self.transport
-                .handle_timeout(ticket)
-                .map_err(SecsRuntimeError::Transport)?;
+            if let Err(error) = self.transport.handle_timeout(ticket) {
+                self.complete_expired_timeout_calls();
+                return Err(SecsRuntimeError::Transport(error));
+            }
+            self.complete_expired_timeout_calls();
         }
         Ok(())
     }
@@ -176,6 +181,27 @@ where
     }
 
     /// 내부에 등록된 서비스 호출
+    fn complete_expired_timeout_calls(&mut self) {
+        while let Some(timeout) = self.transport.poll_expired_timeout() {
+            log::error!("timeout occured! {:?}", timeout);
+            
+            match timeout {
+                SecsTimeoutUnit::T3(key) => {
+                    if let Some(pending) = self.shared.borrow_mut().pending_calls.get_mut(&key) {
+                        pending.result = Some(Err(CallError::Timeout));
+                    }
+                }
+                SecsTimeoutUnit::T6 | SecsTimeoutUnit::T7 | SecsTimeoutUnit::T8 => {
+                    let mut shared = self.shared.borrow_mut();
+                    for pending in shared.pending_calls.values_mut() {
+                        pending.result = Some(Err(CallError::Timeout));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn serve_message(&mut self, message: RuntimeMessage) {
         let handle = self.handle();
         let route = SecsRuntimeRoute::from_message(&message.payload);

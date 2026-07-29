@@ -1,4 +1,5 @@
 use crate::MachineError;
+use crate::SecsTimeoutUnit;
 use crate::message::RuntimeMessage;
 use crate::timer::TimeoutTicket;
 
@@ -33,4 +34,8 @@ pub trait MessageTransport {
     fn handle_timeout(&mut self, ticket: TimeoutTicket) -> Result<(), MachineError>;
 
     fn poll_timeout(&mut self) -> Option<TimeoutTicket>;
+
+    fn poll_expired_timeout(&mut self) -> Option<SecsTimeoutUnit> {
+        None
+    }
 }

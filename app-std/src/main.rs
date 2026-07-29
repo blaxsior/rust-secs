@@ -30,7 +30,7 @@ fn build_config(remote_addr: SocketAddr) -> HsmsTransportConfig {
     HsmsTransportConfig {
         session_id: SessionId(0),
         connection_mode: ConnectionRole::Passive,
-        t3_timeout: Duration::from_secs(45),
+        t3_timeout: Duration::from_secs(5),
         t5_timeout: Duration::from_secs(10),
         t6_timeout: Duration::from_secs(5),
         t7_timeout: Duration::from_secs(10),
