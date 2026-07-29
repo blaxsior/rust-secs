@@ -5,7 +5,9 @@ use std::time::Duration;
 use secs_common::{ConnectionRole, SystemByteSource};
 use secs_ii::item::Secs2Variant;
 use secs_ii::{FunctionId, Secs2Message, StreamId};
-use secs_runtime::{HandlerError, SecsRuntime, SecsService, ServiceContext, TimeoutConfig};
+use secs_runtime::{
+    HandlerError, SecsRuntime, SecsScenario, SecsService, ServiceContext, TimeoutConfig,
+};
 use secs_runtime_std::{StdSecsTimer, TcpServerDataSource};
 use secs_transport::transport::SessionId;
 use secs_transport::transport::hsms::config::HsmsTransportConfig;
@@ -78,6 +80,36 @@ impl SecsService for EstablishCommunicationService {
     }
 }
 
+struct EstablishCommunicationScene;
+
+impl SecsScenario for EstablishCommunicationScene {
+    async fn run(self, ctx: secs_runtime::ScenarioContext) -> Result<(), HandlerError> {
+        let _key = ctx.send(Secs2Message::new(
+            StreamId(1),
+            FunctionId(13),
+            true,
+            Some(Secs2Variant::list(vec![
+                Secs2Variant::ascii("hello"),
+                Secs2Variant::ascii("world"),
+            ])),
+        ));
+
+        let Some(key) = _key else { return Ok(()) };
+
+        match ctx.recv(key).await {
+            Ok(data) => log::info!(
+                "recv S{}F{} W={}",
+                data.stream.0,
+                data.function.0,
+                data.need_reply
+            ),
+            Err(e) => log::error!("error occured {:?}", e),
+        }
+
+        Ok(())
+    }
+}
+
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
 
@@ -108,6 +140,8 @@ fn main() {
         return;
     }
 
+    let mut count: u16 = 1;
+
     loop {
         if let Err(error) = runtime.tick() {
             log::error!("runtime tick failed: {:?}", error);
@@ -133,5 +167,12 @@ fn main() {
         }
 
         thread::sleep(Duration::from_millis(10));
+
+        if (count % 1000) == 0 {
+            log::debug!("start scenario");
+            count = 0;
+            runtime.start_scenario(EstablishCommunicationScene);
+        }
+        count = count.overflowing_add(1).0;
     }
 }

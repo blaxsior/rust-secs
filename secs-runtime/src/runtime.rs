@@ -13,7 +13,7 @@ use secs_runtime_core::{MessageTransport, RuntimeMessage, SecsTimer, SystemByteS
 
 use crate::{
     error::{CallError, HandlerError, SecsRuntimeError},
-    scenario::{BoxFuture, ScenarioContext, SecsScenario},
+    scenario::{BoxFuture, ScenarioContext, SecsScenario, handler::BoxedSecsScenario},
     service::{SecsService, ServiceContext},
     shared::{RuntimeCommand, RuntimeHandle, RuntimeShared},
     timer::TimeoutConfig,
@@ -86,13 +86,17 @@ where
             .insert(SecsRuntimeRoute::new(stream, function), Box::new(service));
     }
 
-    pub fn spawn_scenario<H>(&mut self, scenario: H)
+    pub fn start_scenario<H>(&mut self, scenario: H)
     where
         H: SecsScenario + 'static,
     {
+        self.start_boxed_scenario(Box::new(scenario));
+    }
+
+    fn start_boxed_scenario(&mut self, scenario: Box<dyn BoxedSecsScenario>) {
         let ctx = ScenarioContext::new(self.handle());
         self.tasks.push_back(RuntimeTask {
-            future: Box::new(scenario).run(ctx),
+            future: scenario.run_boxed(ctx),
         });
     }
 

@@ -37,6 +37,8 @@ pub fn decode(mut blocks: Vec<Secs1Block>) -> Result<Secs1Message, SecsMessageCo
     let header = Secs1MessageHeader::from(header);
 
     let raw_bytes: Vec<u8> = blocks.into_iter().flat_map(|it| it.data).collect();
+    log::debug!("raw = {:?}", raw_bytes);
+
     let body = if raw_bytes.is_empty() {
         None
     } else {
