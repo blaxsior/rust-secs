@@ -265,6 +265,7 @@ impl HsmsTransport {
                     let _ = self
                         .machine
                         .handle_event(HsmsMessageSignal::SendFailed(header));
+                    let _ = self.handle_machine_events();
                     let _ = self.recover_from_tcp_failure();
                     return Err(MachineError::InvalidState);
                 }
@@ -295,10 +296,9 @@ impl HsmsTransport {
             return Ok(());
         }
 
-        self.machine
-            .handle_read(&buf[..len])
-            .map_err(|_| MachineError::DecodeFailed)?;
+        let read_result = self.machine.handle_read(&buf[..len]);
         self.handle_machine_events()?;
+        read_result.map_err(|_| MachineError::DecodeFailed)?;
         self.process_received_messages()
     }
 
