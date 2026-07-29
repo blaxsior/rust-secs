@@ -201,10 +201,14 @@ impl TryFrom<&[u8]> for HsmsMessage {
 
         let payload = if header.is_data() {
             let body_bytes = &value[14..4 + len];
-            Some(
-                Secs2Variant::try_from(body_bytes)
-                    .map_err(|_| SecsTransportError::InvalidHeader)?,
-            )
+            if body_bytes.is_empty() {
+                None
+            } else {
+                Some(
+                    Secs2Variant::try_from(body_bytes)
+                        .map_err(|_| SecsTransportError::InvalidHeader)?,
+                )
+            }
         } else {
             None
         };
@@ -370,6 +374,24 @@ mod tests {
         assert!(!header.need_reply());
         assert_eq!(header.byte2, 0x01);
         assert_eq!(header.byte3, 0x04);
+    }
+
+    #[test]
+    fn test_data_message_try_from_without_body() {
+        let header = HsmsHeader::data(
+            SessionId(10),
+            StreamId(1),
+            FunctionId(13),
+            true,
+            SystemByte(100),
+        );
+        let message = HsmsMessage::new(header, None);
+        let bytes = message.to_bytes().unwrap();
+
+        let decoded = HsmsMessage::try_from(bytes.as_slice()).unwrap();
+
+        assert_eq!(decoded.header, header);
+        assert!(decoded.payload.is_none());
     }
 
     #[test]
