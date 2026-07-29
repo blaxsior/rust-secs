@@ -111,10 +111,19 @@ fn main() {
     loop {
         if let Err(error) = runtime.tick() {
             log::error!("runtime tick failed: {:?}", error);
-            break;
+            if matches!(
+                error,
+                secs_runtime::SecsRuntimeError::Transport(
+                    secs_runtime_core::MachineError::DataSourceError(
+                        secs_runtime_core::ByteDataSourceError::NotOpen
+                    )
+                )
+            ) {
+                thread::sleep(Duration::from_millis(200));
+            }
         }
 
-        while let Some(message) = runtime.poll_inbox() {
+        while let Some(message) = runtime.poll_incomming_msg() {
             log::debug!(
                 "received unrouted message: S{}F{}, need_reply={}",
                 message.stream.0,

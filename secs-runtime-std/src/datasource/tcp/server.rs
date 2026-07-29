@@ -48,7 +48,7 @@ where
     A: ToSocketAddrs,
 {
     fn open(&mut self) -> Result<(), ByteDataSourceError> {
-        if self.stream.is_some() {
+        if self.is_open() {
             return Ok(());
         }
 
@@ -97,7 +97,7 @@ where
     }
 
     fn is_open(&self) -> bool {
-        self.listener.is_some() || self.stream.is_some()
+        self.listener.is_some() && self.stream.is_some()
     }
 
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, ByteDataSourceError> {
@@ -109,7 +109,9 @@ where
             .read(buf)
             .map_err(|it| map_io_error(it, ByteDataSourceError::ReadFailed))?;
         if len == 0 {
-            return Err(ByteDataSourceError::Disconnected);
+            log::warn!("client closed with EOF");
+            self.close()?;
+            return Err(ByteDataSourceError::ReadFailed);
         }
 
         Ok(len)

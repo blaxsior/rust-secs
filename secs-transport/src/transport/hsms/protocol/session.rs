@@ -296,6 +296,7 @@ impl HsmsSession {
             HsmsSessionSignal::Disconnected => {
                 log::debug!("tcp disconnected. return to not connected state");
                 self.change_state(HsmsConnectionState::NotConnected);
+                self.passive_reconnect();
                 if self.role.is_active() {
                     // not selected -> not selected 시 T5 timeout 시작
                     self.can_connect = false;
@@ -398,6 +399,7 @@ impl HsmsSession {
             }
             HsmsSessionSignal::Disconnected => {
                 self.change_state(HsmsConnectionState::NotConnected);
+                self.passive_reconnect();
             }
             HsmsSessionSignal::Timeout(unit) => {
                 // control 중 T6 발생 or TCP 통신 중 T8 발생 -> TCP 커넥션 종료
@@ -411,7 +413,7 @@ impl HsmsSession {
     }
 
     fn change_state(&mut self, state: HsmsConnectionState) {
-        log::debug!("state changed from {:?} to {:?}", self.state, state);
+        log::debug!("state: {:?} → {:?}", self.state, state);
         self.state = state;
     }
 
@@ -429,6 +431,15 @@ impl HsmsSession {
         // 실패한 작업에 대한 effect 정리
         self.effects.clear();
         Err(error)
+    }
+
+    /// passive 상태에서 connect 대기 상태로 돌아가기 위해 필요한 함수
+    /// datasource server 구현 방식이 현재와 달라질 경우 필요하지 않을 수 있음
+    /// 세션을 자동 연결할 수 있도록 기능 추가
+    fn passive_reconnect(&mut self) {
+        if self.role.is_passive() {
+            self.stack_effect(HsmsSessionEffect::Connect);
+        }
     }
 }
 
@@ -593,6 +604,28 @@ mod tests {
     }
 
     /// T5 대기 중 connect 요청 시 에러 반환
+    #[test]
+    fn test_passive_not_selected_disconnect_reconnects() {
+        let mut session = get_passive_session();
+        session.state = HsmsConnectionState::NotSelected;
+
+        let effects = session.handle(HsmsSessionSignal::Disconnected).unwrap();
+
+        assert_eq!(session.state, HsmsConnectionState::NotConnected);
+        assert!(effects.contains(&HsmsSessionEffect::Connect));
+    }
+
+    #[test]
+    fn test_passive_selected_disconnect_reconnects() {
+        let mut session = get_passive_session();
+        session.state = HsmsConnectionState::Selected;
+
+        let effects = session.handle(HsmsSessionSignal::Disconnected).unwrap();
+
+        assert_eq!(session.state, HsmsConnectionState::NotConnected);
+        assert!(effects.contains(&HsmsSessionEffect::Connect));
+    }
+
     #[test]
     fn test_connect_not_allowed_if_t5_waiting() {
         let mut session = get_active_session();

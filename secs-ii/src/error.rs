@@ -4,7 +4,7 @@ use alloc::string::String;
 pub enum Secs2Error {
     // 1. std::io::Error 대신 데이터가 부족할 때 발생하는 UnexpectedEof를 독자적 변수로 분리
     UnexpectedEof,
-    
+
     // 2. 기존의 에러 포맷 유지
     InvalidFormatCode(u8),
     InvalidLength(usize),

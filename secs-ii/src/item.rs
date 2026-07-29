@@ -16,8 +16,8 @@ pub mod uint4;
 pub mod uint8;
 
 use alloc::string::String;
-use alloc::vec::Vec;
 use alloc::vec;
+use alloc::vec::Vec;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use crate::{

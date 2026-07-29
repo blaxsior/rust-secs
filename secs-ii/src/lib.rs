@@ -46,7 +46,7 @@ impl Secs2Message {
         stream: StreamId,
         function: FunctionId,
         need_reply: bool,
-        body:  Option<Secs2Variant>,
+        body: Option<Secs2Variant>,
     ) -> Self {
         Self {
             stream,

@@ -49,7 +49,8 @@ where
     shared: Rc<RefCell<RuntimeShared>>,
     services: BTreeMap<SecsRuntimeRoute, Box<dyn SecsService>>,
     tasks: VecDeque<RuntimeTask>,
-    inbox: VecDeque<Secs2Message>,
+    // 들어온 메시지
+    incomming_msgs: VecDeque<Secs2Message>,
 }
 
 impl<T, R> SecsRuntime<T, R>
@@ -69,7 +70,7 @@ where
             shared: Rc::new(RefCell::new(RuntimeShared::new(system_bytes))),
             services: BTreeMap::new(),
             tasks: VecDeque::new(),
-            inbox: VecDeque::new(),
+            incomming_msgs: VecDeque::new(),
         }
     }
 
@@ -95,8 +96,8 @@ where
         });
     }
 
-    pub fn poll_inbox(&mut self) -> Option<Secs2Message> {
-        self.inbox.pop_front()
+    pub fn poll_incomming_msg(&mut self) -> Option<Secs2Message> {
+        self.incomming_msgs.pop_front()
     }
 }
 
@@ -148,7 +149,7 @@ where
             if message.is_primary() {
                 self.serve_message(message);
             } else {
-                self.inbox.push_back(message.into_payload());
+                self.incomming_msgs.push_back(message.into_payload());
             }
         }
         Ok(())
@@ -170,11 +171,18 @@ where
         Ok(None)
     }
 
+    /// 내부에 등록된 서비스 호출
     fn serve_message(&mut self, message: RuntimeMessage) {
         let handle = self.handle();
         let route = SecsRuntimeRoute::from_message(&message.payload);
         let Some(service) = self.services.get_mut(&route) else {
-            self.inbox.push_back(message.into_payload());
+            let secs2_msg = message.into_payload();
+            log::warn!(
+                "no handler found for msg: S{}F{}",
+                secs2_msg.stream.0,
+                secs2_msg.function.0
+            );
+            self.incomming_msgs.push_back(secs2_msg);
             return;
         };
 

@@ -61,7 +61,7 @@ impl HsmsTransport {
         }
     }
 
-    // control을 Hsms 메시지로 변환
+    // control??Hsms 메시지�?변??
     fn control_to_message(&mut self, control: HsmsControl) -> HsmsMessage {
         let system_byte = match control {
             HsmsControl::RejectReq(_, _, system_byte) => system_byte,
@@ -141,6 +141,14 @@ impl HsmsTransport {
         Ok(())
     }
 
+    fn recover_from_tcp_failure(&mut self) -> Result<(), MachineError> {
+        if let Err(error) = self.data_source.close() {
+            log::error!("failed to close datasource. reason = {:?}", error);
+        }
+
+        self.handle_session_signal(HsmsSessionSignal::Disconnected)
+    }
+
     fn handle_effect(&mut self, effect: HsmsSessionEffect) -> Result<(), MachineError> {
         match effect {
             HsmsSessionEffect::Connect => match self.data_source.open() {
@@ -153,30 +161,9 @@ impl HsmsTransport {
                     return Err(MachineError::InvalidState);
                 }
             },
-            HsmsSessionEffect::Disconnect => match self.data_source.close() {
-                Ok(()) => {
-                    log::debug!("success to close datasource");
-                    self.handle_session_signal(HsmsSessionSignal::Disconnected)?;
-
-                    // 공식 명세는 close TCP/IP connection 정도로 표현하나,
-                    // 다음 연결을 위해 accept 상태가 되는 것이 자연스러움
-                    if self.session.is_passive() {
-                        log::debug!("passive transport will wait for next peer");
-                        let effects = self.session.connect().map_err(|error| {
-                            log::error!(
-                                "failed to re-open passive hsms session after disconnect: {:?}",
-                                error
-                            );
-                            MachineError::InvalidState
-                        })?;
-                        self.handle_effects(effects)?;
-                    }
-                }
-                Err(error) => {
-                    log::error!("failed to close datasource. reason = {:?}", error);
-                    return Err(MachineError::InvalidState);
-                }
-            },
+            HsmsSessionEffect::Disconnect => {
+                self.recover_from_tcp_failure()?;
+            }
             HsmsSessionEffect::SendControl(control) => {
                 log::debug!("send hsms control: {:?}", control);
                 let msg = self.control_to_message(control);
@@ -278,7 +265,7 @@ impl HsmsTransport {
                     let _ = self
                         .machine
                         .handle_event(HsmsMessageSignal::SendFailed(header));
-                    let _ = self.handle_session_signal(HsmsSessionSignal::Disconnected);
+                    let _ = self.recover_from_tcp_failure();
                     return Err(MachineError::InvalidState);
                 }
             }
@@ -289,21 +276,17 @@ impl HsmsTransport {
 
     fn poll_source_read(&mut self) -> Result<(), MachineError> {
         if !self.data_source.is_open() {
-            log::debug!("source not opened");
-            return Ok(());
+            // log::debug!("source not opened");
+            return Err(MachineError::DataSourceError(ByteDataSourceError::NotOpen));
         }
 
         let mut buf = [0u8; 4096];
         let len = match self.data_source.read(&mut buf) {
             Ok(len) => len,
             Err(error) if error.is_temporary() => return Ok(()),
-            Err(ByteDataSourceError::Disconnected) => {
-                self.handle_session_signal(HsmsSessionSignal::Disconnected)?;
-                return Ok(());
-            }
             Err(error) => {
                 log::error!("failed to read datasource. reason = {:?}", error);
-                self.handle_session_signal(HsmsSessionSignal::Disconnected)?;
+                self.recover_from_tcp_failure()?;
                 return Err(MachineError::InvalidState);
             }
         };

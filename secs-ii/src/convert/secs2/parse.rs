@@ -1,15 +1,13 @@
-use crate::{
-    item::{
-        Secs2FormatCode, Secs2Item, Secs2Variant, ascii::Secs2ASCII, binary::Secs2Binary,
-        boolean::Secs2Boolean, float4::Secs2Float4, float8::Secs2Float8, int1::Secs2Int1,
-        int2::Secs2Int2, int4::Secs2Int4, int8::Secs2Int8, list::Secs2List, uint1::Secs2Uint1,
-        uint2::Secs2Uint2, uint4::Secs2Uint4, uint8::Secs2Uint8,
-    }
+use crate::item::{
+    Secs2FormatCode, Secs2Item, Secs2Variant, ascii::Secs2ASCII, binary::Secs2Binary,
+    boolean::Secs2Boolean, float4::Secs2Float4, float8::Secs2Float8, int1::Secs2Int1,
+    int2::Secs2Int2, int4::Secs2Int4, int8::Secs2Int8, list::Secs2List, uint1::Secs2Uint1,
+    uint2::Secs2Uint2, uint4::Secs2Uint4, uint8::Secs2Uint8,
 };
 
+use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use alloc::format;
 
 pub fn parse<T>(data: &T) -> Result<Secs2Variant, String>
 where

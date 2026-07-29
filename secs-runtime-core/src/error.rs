@@ -12,10 +12,10 @@ pub enum MachineError {
     SendFailed(TransactionKey),
     ReceiveFailed(TransactionKey),
     TransportSpecific(u16),
+    DataSourceError(ByteDataSourceError),
 }
 
 pub enum RuntimeError<M, T> {
-    DataSource(ByteDataSourceError),
     Machine(M),
     Timer(T),
 }
