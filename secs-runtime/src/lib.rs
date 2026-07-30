@@ -10,7 +10,7 @@ mod shared;
 pub mod timer;
 
 pub use error::{CallError, HandlerError, SecsRuntimeError};
-pub use runtime::{SecsRuntime, SecsRuntimeRoute};
+pub use runtime::{DefaultScenarioTaskRunner, ScenarioTaskOutput, SecsRuntime, SecsRuntimeRoute};
 pub use scenario::{BoxFuture, ScenarioContext, SecsScenario};
 pub use service::{SecsService, ServiceContext};
 pub use timer::TimeoutConfig;

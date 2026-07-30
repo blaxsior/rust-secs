@@ -1,4 +1,4 @@
-use secs_runtime_core::MachineError;
+use secs_runtime_core::{MachineError, TaskSpawnError};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CallError {
@@ -31,4 +31,5 @@ pub enum SecsRuntimeError<TimerError> {
     Transport(MachineError),
     Timer(TimerError),
     Handler(HandlerError),
+    TaskSpawn(TaskSpawnError),
 }

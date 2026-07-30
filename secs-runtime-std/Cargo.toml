@@ -6,5 +6,6 @@ edition = "2024"
 [dependencies]
 thiserror.workspace = true
 log.workspace = true
+futures.workspace = true
 
 secs-runtime-core.workspace = true

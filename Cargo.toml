@@ -20,3 +20,4 @@ secs-transport = { path = "secs-transport" }
 thiserror = "2.0.18"
 log = "0.4.33"
 env_logger = "0.11.11"
+futures = "0.3.31"

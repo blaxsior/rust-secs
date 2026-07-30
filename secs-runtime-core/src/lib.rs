@@ -14,7 +14,7 @@ pub use io::{ByteDataSource, ByteDataSourceError};
 pub use machine::{MachineEvent, MachineSignal, MessageTransport};
 pub use message::RuntimeMessage;
 pub use promise::{
-    PromiseFuture, PromiseResolver, ReadyQueue, TaskFuture, TaskId, TaskQueue, promise, task_waker,
+    PromiseFuture, PromiseResolver, TaskFuture, TaskQueue, TaskRunner, TaskSpawnError, promise,
 };
 pub use timer::{SecsTimer, TimeoutTicket};
 

@@ -2,13 +2,14 @@ use std::net::SocketAddr;
 use std::thread;
 use std::time::Duration;
 
+use futures::executor::LocalPool;
 use secs_common::{ConnectionRole, SystemByteSource};
 use secs_ii::item::Secs2Variant;
 use secs_ii::{FunctionId, Secs2Message, StreamId};
 use secs_runtime::{
     HandlerError, SecsRuntime, SecsScenario, SecsService, ServiceContext, TimeoutConfig,
 };
-use secs_runtime_std::{StdSecsTimer, TcpServerDataSource};
+use secs_runtime_std::{LocalPoolTaskRunner, StdSecsTimer, TcpServerDataSource};
 use secs_transport::transport::SessionId;
 use secs_transport::transport::hsms::config::HsmsTransportConfig;
 use secs_transport::transport::hsms::protocol::HsmsTransport;
@@ -148,11 +149,14 @@ fn main() {
     let source = TcpServerDataSource::new(local_addr);
     let transport = HsmsTransport::new(&config, Box::new(source), SystemByteSource::new());
     let timer = StdSecsTimer::new();
-    let mut runtime = SecsRuntime::new(
+    let mut task_pool = LocalPool::new();
+    let task_runner = LocalPoolTaskRunner::new(task_pool.spawner());
+    let mut runtime = SecsRuntime::with_task_runner(
         transport,
         timer,
         SystemByteSource::new(),
         timeout_config(&config),
+        task_runner,
     );
     runtime.register_service(StreamId(1), FunctionId(13), EstablishCommunicationService);
 
@@ -178,6 +182,7 @@ fn main() {
                 thread::sleep(Duration::from_millis(200));
             }
         }
+        task_pool.run_until_stalled();
 
         while let Some(message) = runtime.poll_received() {
             log::debug!(
@@ -193,7 +198,9 @@ fn main() {
         if (count % 1000) == 0 {
             log::debug!("start scenario");
             count = 0;
-            runtime.start_scenario(EstablishCommunicationScene);
+            if let Err(error) = runtime.start_scenario(EstablishCommunicationScene) {
+                log::error!("failed to start scenario: {:?}", error);
+            }
         }
         count = count.overflowing_add(1).0;
     }

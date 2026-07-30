@@ -10,43 +10,16 @@ use core::{
     task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
 };
 
-use crate::promise::{PromiseFuture, PromiseResolver, promise};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TaskId(pub u64);
-
-#[derive(Clone)]
-pub struct ReadyQueue {
-    inner: Rc<RefCell<VecDeque<TaskId>>>,
-}
-
-impl ReadyQueue {
-    pub fn new() -> Self {
-        Self {
-            inner: Rc::new(RefCell::new(VecDeque::new())),
-        }
-    }
-
-    pub fn push(&self, task_id: TaskId) {
-        self.inner.borrow_mut().push_back(task_id);
-    }
-
-    pub fn pop(&self) -> Option<TaskId> {
-        self.inner.borrow_mut().pop_front()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.inner.borrow().is_empty()
-    }
-}
-
-impl Default for ReadyQueue {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 pub type TaskFuture<T> = Pin<Box<dyn Future<Output = T>>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TaskSpawnError;
+
+pub trait TaskRunner<T> {
+    fn spawn_boxed(&mut self, future: TaskFuture<T>) -> Result<(), TaskSpawnError>;
+
+    fn poll_completed(&mut self) -> VecDeque<T>;
+}
 
 pub struct TaskQueue<T> {
     tasks: BTreeMap<TaskId, TaskFuture<T>>,
@@ -63,56 +36,22 @@ impl<T> TaskQueue<T> {
         }
     }
 
-    pub fn spawn<F>(&mut self, future: F) -> TaskId
-    where
-        F: Future<Output = T> + 'static,
-    {
-        let task_id = self.next_task_id();
-        self.tasks.insert(task_id, Box::pin(future));
-        self.ready.push(task_id);
-        task_id
+    pub fn len(&self) -> usize {
+        self.tasks.len()
     }
 
-    pub fn spawn_boxed(&mut self, future: TaskFuture<T>) -> TaskId {
+    pub fn is_empty(&self) -> bool {
+        self.tasks.is_empty()
+    }
+
+    fn spawn_task(&mut self, future: TaskFuture<T>) -> TaskId {
         let task_id = self.next_task_id();
         self.tasks.insert(task_id, future);
         self.ready.push(task_id);
         task_id
     }
 
-    pub fn spawn_promise<V, E, F, Fut>(&mut self, build: F) -> PromiseResolver<V, E>
-    where
-        F: FnOnce(PromiseFuture<V, E>) -> Fut,
-        Fut: Future<Output = T> + 'static,
-        V: 'static,
-        E: 'static,
-    {
-        self.spawn_promise_with_id(build).1
-    }
-
-    pub fn spawn_promise_with_id<V, E, F, Fut>(
-        &mut self,
-        build: F,
-    ) -> (TaskId, PromiseResolver<V, E>)
-    where
-        F: FnOnce(PromiseFuture<V, E>) -> Fut,
-        Fut: Future<Output = T> + 'static,
-        V: 'static,
-        E: 'static,
-    {
-        let (resolver, future) = promise::<V, E>();
-        let task_id = self.spawn(build(future));
-        (task_id, resolver)
-    }
-
-    pub fn poll_completed(&mut self) -> VecDeque<T> {
-        self.poll_ready()
-            .into_iter()
-            .map(|(_, output)| output)
-            .collect()
-    }
-
-    pub fn poll_ready(&mut self) -> VecDeque<(TaskId, T)> {
+    fn poll_completed(&mut self) -> VecDeque<T> {
         let mut completed = VecDeque::new();
 
         while let Some(task_id) = self.ready.pop() {
@@ -125,23 +64,11 @@ impl<T> TaskQueue<T> {
 
             if let Poll::Ready(output) = task.as_mut().poll(&mut cx) {
                 self.tasks.remove(&task_id);
-                completed.push_back((task_id, output));
+                completed.push_back(output);
             }
         }
 
         completed
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.tasks.is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.tasks.len()
-    }
-
-    pub fn ready_queue(&self) -> ReadyQueue {
-        self.ready.clone()
     }
 
     fn next_task_id(&mut self) -> TaskId {
@@ -157,7 +84,47 @@ impl<T> Default for TaskQueue<T> {
     }
 }
 
-pub fn task_waker(task_id: TaskId, ready: ReadyQueue) -> Waker {
+impl<T> TaskRunner<T> for TaskQueue<T> {
+    fn spawn_boxed(&mut self, future: TaskFuture<T>) -> Result<(), TaskSpawnError> {
+        self.spawn_task(future);
+        Ok(())
+    }
+
+    fn poll_completed(&mut self) -> VecDeque<T> {
+        self.poll_completed()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct TaskId(u64);
+
+#[derive(Clone)]
+struct ReadyQueue {
+    inner: Rc<RefCell<VecDeque<TaskId>>>,
+}
+
+impl ReadyQueue {
+    fn new() -> Self {
+        Self {
+            inner: Rc::new(RefCell::new(VecDeque::new())),
+        }
+    }
+
+    fn push(&self, task_id: TaskId) {
+        self.inner.borrow_mut().push_back(task_id);
+    }
+
+    fn pop(&self) -> Option<TaskId> {
+        self.inner.borrow_mut().pop_front()
+    }
+
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.inner.borrow().is_empty()
+    }
+}
+
+fn task_waker(task_id: TaskId, ready: ReadyQueue) -> Waker {
     let wake_data = Rc::new(TaskWake { task_id, ready });
     unsafe { Waker::from_raw(raw_waker(wake_data)) }
 }
@@ -198,6 +165,7 @@ static VTABLE: RawWakerVTable = RawWakerVTable::new(clone_waker, wake, wake_by_r
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::promise;
 
     #[test]
     fn task_waker_pushes_task_to_ready_queue() {
@@ -215,11 +183,11 @@ mod tests {
     #[test]
     fn task_queue_polls_spawned_ready_task() {
         let mut tasks = TaskQueue::new();
-        let task_id = tasks.spawn(async { 10 });
+        tasks.spawn_boxed(Box::pin(async { 10 })).unwrap();
 
-        let mut completed = tasks.poll_ready();
+        let mut completed = tasks.poll_completed();
 
-        assert_eq!(completed.pop_front(), Some((task_id, 10)));
+        assert_eq!(completed.pop_front(), Some(10));
         assert!(completed.is_empty());
         assert!(tasks.is_empty());
     }
@@ -227,57 +195,18 @@ mod tests {
     #[test]
     fn task_queue_repolls_task_when_promise_resolves() {
         let mut tasks = TaskQueue::new();
-        let resolver =
-            tasks.spawn_promise::<u8, (), _, _>(|future| async move { future.await.unwrap() });
+        let (resolver, future) = promise::<u8, ()>();
+        tasks
+            .spawn_boxed(Box::pin(async move { future.await.unwrap() }))
+            .unwrap();
 
-        assert!(tasks.poll_ready().is_empty());
+        assert!(tasks.poll_completed().is_empty());
         assert_eq!(tasks.len(), 1);
 
         resolver.resolve(33);
 
-        let mut completed = tasks.poll_ready();
-        assert_eq!(completed.pop_front().map(|(_, output)| output), Some(33));
-        assert!(tasks.is_empty());
-    }
-
-    #[test]
-    fn promise_queue_usage_example() {
-        let mut tasks = TaskQueue::new();
-
-        let resolver =
-            tasks.spawn_promise::<&'static str, &'static str, _, _>(|response| async move {
-                let value = response.await?;
-                Ok::<_, &'static str>(value.len())
-            });
-
-        let completed = tasks.poll_ready();
-        assert!(completed.is_empty());
-        assert_eq!(tasks.len(), 1);
-
-        resolver.resolve("selected");
-
         let mut completed = tasks.poll_completed();
-        assert_eq!(completed.pop_front(), Some(Ok(8)));
-        assert!(completed.is_empty());
-        assert!(tasks.is_empty());
-    }
-
-    #[test]
-    fn promise_queue_reject_example() {
-        let mut tasks = TaskQueue::new();
-
-        let resolver = tasks.spawn_promise::<u8, &'static str, _, _>(|response| async move {
-            let value = response.await?;
-            Ok::<_, &'static str>(value + 1)
-        });
-
-        assert!(tasks.poll_ready().is_empty());
-
-        resolver.reject("timeout");
-
-        let mut completed = tasks.poll_completed();
-        assert_eq!(completed.pop_front(), Some(Err("timeout")));
-        assert!(completed.is_empty());
+        assert_eq!(completed.pop_front(), Some(33));
         assert!(tasks.is_empty());
     }
 }

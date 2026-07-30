@@ -8,6 +8,7 @@ use core::cell::RefCell;
 use secs_ii::{FunctionId, Secs2Message, StreamId};
 use secs_runtime_core::{
     MessageTransport, RuntimeMessage, SecsTimeoutUnit, SecsTimer, SystemByteSource, TaskQueue,
+    TaskRunner,
 };
 
 use crate::{
@@ -34,9 +35,13 @@ impl SecsRuntimeRoute {
     }
 }
 
-pub struct SecsRuntime<T, R>
+pub type ScenarioTaskOutput = Result<(), HandlerError>;
+pub type DefaultScenarioTaskRunner = TaskQueue<ScenarioTaskOutput>;
+
+pub struct SecsRuntime<T, R, S = DefaultScenarioTaskRunner>
 where
     R: SecsTimer,
+    S: TaskRunner<ScenarioTaskOutput>,
 {
     // Owns the SECS transport state machine and completed message queues.
     transport: T,
@@ -48,12 +53,12 @@ where
     // Primary messages are routed to services by SxFy.
     services: BTreeMap<SecsRuntimeRoute, Box<dyn SecsService>>,
     // Scenario futures are resumed by promise wakers instead of being polled every tick.
-    tasks: TaskQueue<Result<(), HandlerError>>,
+    task_runner: S,
     // Messages that are not matched by pending calls or services are exposed to callers.
     incomming_msgs: VecDeque<Secs2Message>,
 }
 
-impl<T, R> SecsRuntime<T, R>
+impl<T, R> SecsRuntime<T, R, DefaultScenarioTaskRunner>
 where
     R: SecsTimer,
 {
@@ -63,13 +68,35 @@ where
         system_bytes: SystemByteSource,
         timeout_config: TimeoutConfig<R::Duration>,
     ) -> Self {
+        Self::with_task_runner(
+            transport,
+            timer,
+            system_bytes,
+            timeout_config,
+            TaskQueue::new(),
+        )
+    }
+}
+
+impl<T, R, S> SecsRuntime<T, R, S>
+where
+    R: SecsTimer,
+    S: TaskRunner<ScenarioTaskOutput>,
+{
+    pub fn with_task_runner(
+        transport: T,
+        timer: R,
+        system_bytes: SystemByteSource,
+        timeout_config: TimeoutConfig<R::Duration>,
+        task_runner: S,
+    ) -> Self {
         Self {
             transport,
             timer,
             timeout_config,
             shared: Rc::new(RefCell::new(RuntimeShared::new(system_bytes))),
             services: BTreeMap::new(),
-            tasks: TaskQueue::new(),
+            task_runner,
             incomming_msgs: VecDeque::new(),
         }
     }
@@ -86,16 +113,21 @@ where
             .insert(SecsRuntimeRoute::new(stream, function), Box::new(service));
     }
 
-    pub fn start_scenario<H>(&mut self, scenario: H)
+    pub fn start_scenario<H>(&mut self, scenario: H) -> Result<(), SecsRuntimeError<R::Error>>
     where
         H: SecsScenario + 'static,
     {
-        self.start_boxed_scenario(Box::new(scenario));
+        self.start_boxed_scenario(Box::new(scenario))
     }
 
-    fn start_boxed_scenario(&mut self, scenario: Box<dyn BoxedSecsScenario>) {
+    fn start_boxed_scenario(
+        &mut self,
+        scenario: Box<dyn BoxedSecsScenario>,
+    ) -> Result<(), SecsRuntimeError<R::Error>> {
         let ctx = ScenarioContext::new(self.handle());
-        self.tasks.spawn_boxed(scenario.run_boxed(ctx));
+        self.task_runner
+            .spawn_boxed(scenario.run_boxed(ctx))
+            .map_err(SecsRuntimeError::TaskSpawn)
     }
 
     pub fn poll_received(&mut self) -> Option<Secs2Message> {
@@ -103,11 +135,12 @@ where
     }
 }
 
-impl<T, R> SecsRuntime<T, R>
+impl<T, R, S> SecsRuntime<T, R, S>
 where
     T: MessageTransport,
     R: SecsTimer,
     R::Duration: Copy,
+    S: TaskRunner<ScenarioTaskOutput>,
 {
     pub fn start(&mut self) -> Result<(), SecsRuntimeError<R::Error>> {
         self.transport.start().map_err(SecsRuntimeError::Transport)
@@ -248,7 +281,7 @@ where
 
     fn poll_tasks(&mut self) -> Result<(), SecsRuntimeError<R::Error>> {
         // Only tasks woken by promise resolvers are polled here.
-        for result in self.tasks.poll_completed() {
+        for result in self.task_runner.poll_completed() {
             match result {
                 Ok(()) => {}
                 Err(error) => return Err(SecsRuntimeError::Handler(error)),
