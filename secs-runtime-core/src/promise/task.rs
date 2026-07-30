@@ -44,11 +44,11 @@ impl<T> TaskQueue<T> {
         self.tasks.is_empty()
     }
 
-    fn spawn_task(&mut self, future: TaskFuture<T>) -> TaskId {
-        let task_id = self.next_task_id();
+    fn spawn_task(&mut self, future: TaskFuture<T>) -> Result<TaskId, TaskSpawnError> {
+        let task_id = self.next_task_id()?;
         self.tasks.insert(task_id, future);
         self.ready.push(task_id);
-        task_id
+        Ok(task_id)
     }
 
     fn poll_completed(&mut self) -> VecDeque<T> {
@@ -71,10 +71,21 @@ impl<T> TaskQueue<T> {
         completed
     }
 
-    fn next_task_id(&mut self) -> TaskId {
-        let task_id = TaskId(self.next_task_id);
-        self.next_task_id += 1;
-        task_id
+    fn next_task_id(&mut self) -> Result<TaskId, TaskSpawnError> {
+        let start = self.next_task_id;
+
+        loop {
+            let task_id = TaskId(self.next_task_id);
+            self.next_task_id = self.next_task_id.wrapping_add(1);
+
+            if !self.tasks.contains_key(&task_id) {
+                return Ok(task_id);
+            }
+
+            if self.next_task_id == start {
+                return Err(TaskSpawnError);
+            }
+        }
     }
 }
 
@@ -86,12 +97,11 @@ impl<T> Default for TaskQueue<T> {
 
 impl<T> TaskRunner<T> for TaskQueue<T> {
     fn spawn_boxed(&mut self, future: TaskFuture<T>) -> Result<(), TaskSpawnError> {
-        self.spawn_task(future);
-        Ok(())
+        self.spawn_task(future).map(|_| ())
     }
 
     fn poll_completed(&mut self) -> VecDeque<T> {
-        self.poll_completed()
+        TaskQueue::poll_completed(self)
     }
 }
 
