@@ -73,7 +73,7 @@ impl SecsService for EstablishCommunicationService {
 
         if let Some(reply) = build_s1f14_reply(&message) {
             log::debug!("send reply: S1F14");
-            ctx.send(reply)?;
+            ctx.reply(reply)?;
         }
 
         Ok(())

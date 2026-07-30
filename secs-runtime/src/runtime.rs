@@ -180,11 +180,11 @@ where
         Ok(None)
     }
 
-    /// 내부에 등록된 서비스 호출
+    // -> timeout 핸들링
     fn complete_expired_timeout_calls(&mut self) {
         while let Some(timeout) = self.transport.poll_expired_timeout() {
             log::error!("timeout occured! {:?}", timeout);
-            
+
             match timeout {
                 SecsTimeoutUnit::T3(key) => {
                     if let Some(pending) = self.shared.borrow_mut().pending_calls.get_mut(&key) {

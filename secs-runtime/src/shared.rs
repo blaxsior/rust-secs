@@ -39,6 +39,37 @@ impl RuntimeShared {
             pending_calls: BTreeMap::new(),
         }
     }
+
+    pub(crate) fn send(&mut self, message: Secs2Message) -> Option<TransactionKey> {
+        let system_byte = self.system_bytes.next_system_byte();
+        let key = TransactionKey::new(TransactionOwner::Local, system_byte);
+        self.send_with_key(key, message)
+    }
+
+    pub(crate) fn send_with_key(
+        &mut self,
+        key: TransactionKey,
+        message: Secs2Message,
+    ) -> Option<TransactionKey> {
+        let should_wait_reply = message.function.is_primary() && message.need_reply;
+        let call_key = should_wait_reply.then_some(key);
+        let message = RuntimeMessage::new(key, message);
+
+        if let Some(call_key) = call_key {
+            self.pending_calls
+                .insert(call_key, PendingCall { result: None });
+        }
+        self.commands.push_back(RuntimeCommand::Send {
+            message,
+            call: call_key,
+        });
+
+        call_key
+    }
+
+    pub(crate) fn reply(&mut self, key: TransactionKey, message: Secs2Message) {
+        self.send_with_key(key, message);
+    }
 }
 
 #[derive(Clone)]
@@ -51,33 +82,12 @@ impl RuntimeHandle {
         Self { shared }
     }
 
-    pub(crate) fn send_scenario_message(&self, message: Secs2Message) -> Option<TransactionKey> {
-        let mut shared = self.shared.borrow_mut();
-        let system_byte = shared.system_bytes.next_system_byte();
-        let key = TransactionKey::new(TransactionOwner::Local, system_byte);
-        let should_wait_reply = message.function.is_primary() && message.need_reply;
-        let call_key = should_wait_reply.then_some(key);
-        let message = RuntimeMessage::new(key, message);
-
-        if let Some(call_key) = call_key {
-            shared
-                .pending_calls
-                .insert(call_key, PendingCall { result: None });
-        }
-        shared.commands.push_back(RuntimeCommand::Send {
-            message,
-            call: call_key,
-        });
-
-        call_key
+    pub(crate) fn send(&self, message: Secs2Message) -> Option<TransactionKey> {
+        self.shared.borrow_mut().send(message)
     }
 
-    pub(crate) fn send_only(&self, message: RuntimeMessage) {
-        let mut shared = self.shared.borrow_mut();
-        shared.commands.push_back(RuntimeCommand::Send {
-            message,
-            call: None,
-        });
+    pub(crate) fn reply(&self, request_key: TransactionKey, message: Secs2Message) {
+        self.shared.borrow_mut().send_with_key(request_key, message);
     }
 
     pub(crate) fn recv_call(&self, key: TransactionKey) -> RecvFuture {
