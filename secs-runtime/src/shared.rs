@@ -2,15 +2,13 @@ use alloc::{
     collections::{BTreeMap, VecDeque},
     rc::Rc,
 };
-use core::{
-    cell::RefCell,
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-};
+use core::cell::RefCell;
 
 use secs_ii::Secs2Message;
-use secs_runtime_core::{RuntimeMessage, SystemByteSource, TransactionKey, TransactionOwner};
+use secs_runtime_core::{
+    PromiseFuture, PromiseResolver, RuntimeMessage, SystemByteSource, TransactionKey,
+    TransactionOwner, promise,
+};
 
 use crate::error::CallError;
 
@@ -22,7 +20,7 @@ pub(crate) enum RuntimeCommand {
 }
 
 pub(crate) struct PendingCall {
-    pub result: Option<Result<Secs2Message, CallError>>,
+    pub resolver: Option<PromiseResolver<Secs2Message, CallError>>,
 }
 
 pub(crate) struct RuntimeShared {
@@ -57,7 +55,7 @@ impl RuntimeShared {
 
         if let Some(call_key) = call_key {
             self.pending_calls
-                .insert(call_key, PendingCall { result: None });
+                .insert(call_key, PendingCall { resolver: None });
         }
         self.commands.push_back(RuntimeCommand::Send {
             message,
@@ -65,10 +63,6 @@ impl RuntimeShared {
         });
 
         call_key
-    }
-
-    pub(crate) fn reply(&mut self, key: TransactionKey, message: Secs2Message) {
-        self.send_with_key(key, message);
     }
 }
 
@@ -91,33 +85,22 @@ impl RuntimeHandle {
     }
 
     pub(crate) fn recv_call(&self, key: TransactionKey) -> RecvFuture {
-        RecvFuture {
-            shared: self.shared.clone(),
-            key,
-        }
-    }
-}
-
-pub struct RecvFuture {
-    shared: Rc<RefCell<RuntimeShared>>,
-    key: TransactionKey,
-}
-
-impl Future for RecvFuture {
-    type Output = Result<Secs2Message, CallError>;
-
-    fn poll(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
         let mut shared = self.shared.borrow_mut();
-        let Some(pending) = shared.pending_calls.get_mut(&self.key) else {
-            return Poll::Ready(Err(CallError::UnknownToken));
+        let (resolver, future) = promise();
+
+        let Some(pending) = shared.pending_calls.get_mut(&key) else {
+            resolver.reject(CallError::UnknownToken);
+            return future;
         };
 
-        let Some(result) = pending.result.take() else {
-            return Poll::Pending;
-        };
+        if pending.resolver.replace(resolver).is_some() {
+            let (resolver, future) = promise();
+            resolver.reject(CallError::UnknownToken);
+            return future;
+        }
 
-        shared.pending_calls.remove(&self.key);
-
-        Poll::Ready(result)
+        future
     }
 }
+
+pub type RecvFuture = PromiseFuture<Secs2Message, CallError>;

@@ -94,11 +94,33 @@ impl SecsScenario for EstablishCommunicationScene {
             ])),
         ));
 
-        let Some(key) = _key else { return Ok(()) };
+        let key = _key.unwrap();
 
         match ctx.recv(key).await {
             Ok(data) => log::info!(
-                "recv S{}F{} W={}",
+                "recv1 S{}F{} W={}",
+                data.stream.0,
+                data.function.0,
+                data.need_reply
+            ),
+            Err(e) => log::error!("error occured {:?}", e),
+        }
+
+        let _key2 = ctx.send(Secs2Message::new(
+            StreamId(1),
+            FunctionId(13),
+            true,
+            Some(Secs2Variant::list(vec![
+                Secs2Variant::ascii("hello"),
+                Secs2Variant::ascii("world"),
+            ])),
+        ));
+
+        let key2 = _key2.unwrap();
+
+        match ctx.recv(key2).await {
+            Ok(data) => log::info!(
+                "recv2 S{}F{} W={}",
                 data.stream.0,
                 data.function.0,
                 data.need_reply
@@ -157,7 +179,7 @@ fn main() {
             }
         }
 
-        while let Some(message) = runtime.poll_incomming_msg() {
+        while let Some(message) = runtime.poll_received() {
             log::debug!(
                 "received unrouted message: S{}F{}, need_reply={}",
                 message.stream.0,

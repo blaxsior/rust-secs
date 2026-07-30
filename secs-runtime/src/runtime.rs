@@ -3,19 +3,16 @@ use alloc::{
     collections::{BTreeMap, VecDeque},
     rc::Rc,
 };
-use core::{
-    cell::RefCell,
-    task::{Context, Poll, RawWaker, RawWakerVTable, Waker},
-};
+use core::cell::RefCell;
 
 use secs_ii::{FunctionId, Secs2Message, StreamId};
 use secs_runtime_core::{
-    MessageTransport, RuntimeMessage, SecsTimeoutUnit, SecsTimer, SystemByteSource,
+    MessageTransport, RuntimeMessage, SecsTimeoutUnit, SecsTimer, SystemByteSource, TaskQueue,
 };
 
 use crate::{
     error::{CallError, HandlerError, SecsRuntimeError},
-    scenario::{BoxFuture, ScenarioContext, SecsScenario, handler::BoxedSecsScenario},
+    scenario::{ScenarioContext, SecsScenario, handler::BoxedSecsScenario},
     service::{SecsService, ServiceContext},
     shared::{RuntimeCommand, RuntimeHandle, RuntimeShared},
     timer::TimeoutConfig,
@@ -37,21 +34,22 @@ impl SecsRuntimeRoute {
     }
 }
 
-struct RuntimeTask {
-    future: BoxFuture<'static, Result<(), HandlerError>>,
-}
-
 pub struct SecsRuntime<T, R>
 where
     R: SecsTimer,
 {
+    // Owns the SECS transport state machine and completed message queues.
     transport: T,
+    // Timer backend is injected so std/no_std runtimes can provide their own clock.
     timer: R,
     timeout_config: TimeoutConfig<R::Duration>,
+    // Scenario/service contexts share this state to enqueue sends and register recv waiters.
     shared: Rc<RefCell<RuntimeShared>>,
+    // Primary messages are routed to services by SxFy.
     services: BTreeMap<SecsRuntimeRoute, Box<dyn SecsService>>,
-    tasks: VecDeque<RuntimeTask>,
-    // 들어온 메시지
+    // Scenario futures are resumed by promise wakers instead of being polled every tick.
+    tasks: TaskQueue<Result<(), HandlerError>>,
+    // Messages that are not matched by pending calls or services are exposed to callers.
     incomming_msgs: VecDeque<Secs2Message>,
 }
 
@@ -71,7 +69,7 @@ where
             timeout_config,
             shared: Rc::new(RefCell::new(RuntimeShared::new(system_bytes))),
             services: BTreeMap::new(),
-            tasks: VecDeque::new(),
+            tasks: TaskQueue::new(),
             incomming_msgs: VecDeque::new(),
         }
     }
@@ -97,12 +95,10 @@ where
 
     fn start_boxed_scenario(&mut self, scenario: Box<dyn BoxedSecsScenario>) {
         let ctx = ScenarioContext::new(self.handle());
-        self.tasks.push_back(RuntimeTask {
-            future: scenario.run_boxed(ctx),
-        });
+        self.tasks.spawn_boxed(scenario.run_boxed(ctx));
     }
 
-    pub fn poll_incomming_msg(&mut self) -> Option<Secs2Message> {
+    pub fn poll_received(&mut self) -> Option<Secs2Message> {
         self.incomming_msgs.pop_front()
     }
 }
@@ -118,11 +114,13 @@ where
     }
 
     pub fn tick(&mut self) -> Result<(), SecsRuntimeError<R::Error>> {
+        // Drain transport/timer events first, then run ready scenario tasks. Commands produced by
+        // those tasks are flushed once more before the tick returns.
         self.transport.poll().map_err(SecsRuntimeError::Transport)?;
         self.start_transport_timeouts()?;
         self.handle_expired_timeouts()?;
         self.complete_expired_timeout_calls();
-        self.process_recv_messages()?;
+        self.process_recv_messages();
         self.process_commands()?;
         self.poll_tasks()?;
         self.process_commands()
@@ -149,52 +147,50 @@ where
         Ok(())
     }
 
-    fn process_recv_messages(&mut self) -> Result<(), SecsRuntimeError<R::Error>> {
+    fn process_recv_messages(&mut self) {
         while let Some(message) = self.transport.poll_recv() {
-            let Some(message) = self.complete_pending_call(message)? else {
-                continue;
-            };
-
-            if message.is_primary() {
-                self.serve_message(message);
-            } else {
-                self.incomming_msgs.push_back(message.into_payload());
-            }
+            self.process_recv_message(message);
         }
-        Ok(())
     }
 
-    fn complete_pending_call(
-        &mut self,
-        message: RuntimeMessage,
-    ) -> Result<Option<RuntimeMessage>, SecsRuntimeError<R::Error>> {
+    fn process_recv_message(&mut self, message: RuntimeMessage) {
         let key = message.transaction_key;
-        if !self.shared.borrow().pending_calls.contains_key(&key) {
-            return Ok(Some(message));
+
+        // Pending calls consume matching secondary replies. If no recv waiter exists, the caller
+        // intentionally ignored the response, so the pending slot is simply cleared.
+        if let Some(pending) = self.shared.borrow_mut().pending_calls.remove(&key) {
+            if let Some(resolver) = pending.resolver {
+                resolver.resolve(message.into_payload());
+            }
+            return;
         }
 
-        let mut shared = self.shared.borrow_mut();
-        if let Some(pending) = shared.pending_calls.get_mut(&key) {
-            pending.result = Some(Ok(message.into_payload()));
+        if message.is_primary() {
+            self.serve_message(message);
+        } else {
+            self.incomming_msgs.push_back(message.into_payload());
         }
-        Ok(None)
     }
 
-    // -> timeout 핸들링
     fn complete_expired_timeout_calls(&mut self) {
         while let Some(timeout) = self.transport.poll_expired_timeout() {
             log::error!("timeout occured! {:?}", timeout);
 
             match timeout {
                 SecsTimeoutUnit::T3(key) => {
-                    if let Some(pending) = self.shared.borrow_mut().pending_calls.get_mut(&key) {
-                        pending.result = Some(Err(CallError::Timeout));
+                    if let Some(pending) = self.shared.borrow_mut().pending_calls.remove(&key)
+                        && let Some(resolver) = pending.resolver
+                    {
+                        resolver.reject(CallError::Timeout);
                     }
                 }
                 SecsTimeoutUnit::T6 | SecsTimeoutUnit::T7 | SecsTimeoutUnit::T8 => {
                     let mut shared = self.shared.borrow_mut();
-                    for pending in shared.pending_calls.values_mut() {
-                        pending.result = Some(Err(CallError::Timeout));
+                    let pending_calls = core::mem::take(&mut shared.pending_calls);
+                    for (_, pending) in pending_calls {
+                        if let Some(resolver) = pending.resolver {
+                            resolver.reject(CallError::Timeout);
+                        }
                     }
                 }
                 _ => {}
@@ -233,11 +229,14 @@ where
                 RuntimeCommand::Send { message, call } => {
                     let result = self.transport.send(message);
                     if let Err(error) = result {
+                        // A send failure completes the waiting promise immediately instead of
+                        // letting the transaction wait for a later timeout.
                         if let Some(key) = call {
                             if let Some(pending) =
-                                self.shared.borrow_mut().pending_calls.get_mut(&key)
+                                self.shared.borrow_mut().pending_calls.remove(&key)
+                                && let Some(resolver) = pending.resolver
                             {
-                                pending.result = Some(Err(CallError::Transport(error)));
+                                resolver.reject(CallError::Transport(error));
                             }
                         }
                         return Err(SecsRuntimeError::Transport(error));
@@ -248,32 +247,13 @@ where
     }
 
     fn poll_tasks(&mut self) -> Result<(), SecsRuntimeError<R::Error>> {
-        let waker = noop_waker();
-        let mut cx = Context::from_waker(&waker);
-        let mut remaining = VecDeque::new();
-
-        while let Some(mut task) = self.tasks.pop_front() {
-            match task.future.as_mut().poll(&mut cx) {
-                Poll::Ready(Ok(())) => {}
-                Poll::Ready(Err(error)) => return Err(SecsRuntimeError::Handler(error)),
-                Poll::Pending => remaining.push_back(task),
+        // Only tasks woken by promise resolvers are polled here.
+        for result in self.tasks.poll_completed() {
+            match result {
+                Ok(()) => {}
+                Err(error) => return Err(SecsRuntimeError::Handler(error)),
             }
         }
-
-        self.tasks = remaining;
         Ok(())
     }
-}
-
-fn noop_waker() -> Waker {
-    unsafe fn clone(_: *const ()) -> RawWaker {
-        RawWaker::new(core::ptr::null(), &VTABLE)
-    }
-    unsafe fn wake(_: *const ()) {}
-    unsafe fn wake_by_ref(_: *const ()) {}
-    unsafe fn drop(_: *const ()) {}
-
-    static VTABLE: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref, drop);
-
-    unsafe { Waker::from_raw(RawWaker::new(core::ptr::null(), &VTABLE)) }
 }
