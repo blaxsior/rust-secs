@@ -38,13 +38,13 @@ impl SecsRuntimeRoute {
 pub type ScenarioTaskOutput = Result<(), HandlerError>;
 pub type DefaultScenarioTaskRunner = TaskQueue<ScenarioTaskOutput>;
 
-pub struct SecsRuntime<T, R, S = DefaultScenarioTaskRunner>
+pub struct SecsRuntime<R, S = DefaultScenarioTaskRunner>
 where
     R: SecsTimer,
     S: TaskRunner<ScenarioTaskOutput>,
 {
     // Owns the SECS transport state machine and completed message queues.
-    transport: T,
+    transport: Box<dyn MessageTransport>,
     // Timer backend is injected so std/no_std runtimes can provide their own clock.
     timer: R,
     timeout_config: TimeoutConfig<R::Duration>,
@@ -58,12 +58,12 @@ where
     incomming_msgs: VecDeque<Secs2Message>,
 }
 
-impl<T, R> SecsRuntime<T, R, DefaultScenarioTaskRunner>
+impl<R> SecsRuntime<R, DefaultScenarioTaskRunner>
 where
     R: SecsTimer,
 {
     pub fn new(
-        transport: T,
+        transport: impl MessageTransport + 'static,
         timer: R,
         system_bytes: SystemByteSource,
         timeout_config: TimeoutConfig<R::Duration>,
@@ -78,13 +78,29 @@ where
     }
 }
 
-impl<T, R, S> SecsRuntime<T, R, S>
+impl<R, S> SecsRuntime<R, S>
 where
     R: SecsTimer,
     S: TaskRunner<ScenarioTaskOutput>,
 {
     pub fn with_task_runner(
-        transport: T,
+        transport: impl MessageTransport + 'static,
+        timer: R,
+        system_bytes: SystemByteSource,
+        timeout_config: TimeoutConfig<R::Duration>,
+        task_runner: S,
+    ) -> Self {
+        Self::with_boxed_parts(
+            Box::new(transport),
+            timer,
+            system_bytes,
+            timeout_config,
+            task_runner,
+        )
+    }
+
+    pub fn with_boxed_parts(
+        transport: Box<dyn MessageTransport>,
         timer: R,
         system_bytes: SystemByteSource,
         timeout_config: TimeoutConfig<R::Duration>,
@@ -133,20 +149,15 @@ where
     pub fn poll_received(&mut self) -> Option<Secs2Message> {
         self.incomming_msgs.pop_front()
     }
-}
 
-impl<T, R, S> SecsRuntime<T, R, S>
-where
-    T: MessageTransport,
-    R: SecsTimer,
-    R::Duration: Copy,
-    S: TaskRunner<ScenarioTaskOutput>,
-{
     pub fn start(&mut self) -> Result<(), SecsRuntimeError<R::Error>> {
         self.transport.start().map_err(SecsRuntimeError::Transport)
     }
 
-    pub fn tick(&mut self) -> Result<(), SecsRuntimeError<R::Error>> {
+    pub fn tick(&mut self) -> Result<(), SecsRuntimeError<R::Error>>
+    where
+        R::Duration: Copy,
+    {
         // Drain transport/timer events first, then run ready scenario tasks. Commands produced by
         // those tasks are flushed once more before the tick returns.
         self.transport.poll().map_err(SecsRuntimeError::Transport)?;
@@ -159,7 +170,10 @@ where
         self.process_commands()
     }
 
-    fn start_transport_timeouts(&mut self) -> Result<(), SecsRuntimeError<R::Error>> {
+    fn start_transport_timeouts(&mut self) -> Result<(), SecsRuntimeError<R::Error>>
+    where
+        R::Duration: Copy,
+    {
         while let Some(ticket) = self.transport.poll_timeout() {
             let duration = self.timeout_config.duration_for(ticket.timeout);
             self.timer
