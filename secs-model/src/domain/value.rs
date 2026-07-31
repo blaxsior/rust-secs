@@ -1,6 +1,7 @@
-use alloc::{borrow::ToOwned, collections::BTreeMap, string::String};
+use alloc::{borrow::ToOwned, collections::BTreeMap, string::String, vec::Vec};
 use core::fmt;
 
+use secs_ii::convert::secs2::serialize::Encode;
 use secs_ii::item::{Secs2FormatCode, Secs2Variant};
 use serde::{Deserialize, Serialize};
 
@@ -94,15 +95,16 @@ impl ValueSpec {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct ValueData {
     pub id: ValueId,
-    pub value: Secs2Variant,
+    pub encoded: String,
 }
 
 impl ValueData {
-    pub fn new(id: ValueId, value: Secs2Variant) -> Self {
-        Self { id, value }
+    pub fn new(id: ValueId, encoded: String) -> Self {
+        Self { id, encoded }
     }
 }
 
@@ -144,7 +146,19 @@ where
 
     fn insert_data(&mut self, data: ValueData) {
         if self.specs.contains_key(&data.id) {
-            self.values.insert(data.id, data.value);
+            let Ok(bytes) = decode_hex(&data.encoded) else {
+                log::error!("failed to decode value data hex: {:?}", data.id);
+                return;
+            };
+
+            match Secs2Variant::try_from(bytes.as_slice()) {
+                Ok(value) => {
+                    self.values.insert(data.id, value);
+                }
+                Err(err) => {
+                    log::error!("failed to decode value data {:?}: {:?}", data.id, err);
+                }
+            }
         }
     }
 
@@ -184,18 +198,21 @@ where
             });
         }
 
-        let data = ValueData::new(id.clone(), value);
-        // 영구 저장이 필요한 경우 저장
+        let mut bytes = Vec::new();
+        if let Err(err) = value.encode(&mut bytes) {
+            log::warn!("skip value write because value encode failed: {:?}, {:?}", id, err);
+            return Err(SecsModelError::EncodeValue(id.clone()));
+        }
+
+        let data = ValueData::new(id.clone(), encode_hex(&bytes));
         if spec.persistent {
             if let Err(err) = self.data_repository.save(&data) {
                 log::error!("failed to save data on repository {:?}", err);
             }
         }
-        self.values.insert(data.id, data.value);
+        self.values.insert(data.id, value);
         Ok(())
     }
-
-
 
     pub fn remove(&mut self, id: &ValueId) -> Result<(), SecsModelError> {
         let spec = self
@@ -225,5 +242,41 @@ impl ValueDictionary<NoopValueSpecRepository, NoopValueDataRepository> {
             spec_repository: NoopValueSpecRepository,
             data_repository: NoopValueDataRepository,
         }
+    }
+}
+
+fn encode_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+
+    let mut result = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        result.push(HEX[(byte >> 4) as usize] as char);
+        result.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+
+    result
+}
+
+fn decode_hex(hex: &str) -> Result<Vec<u8>, ()> {
+    if hex.len() % 2 != 0 {
+        return Err(());
+    }
+
+    hex.as_bytes()
+        .chunks_exact(2)
+        .map(|chunk| {
+            let high = decode_hex_digit(chunk[0])?;
+            let low = decode_hex_digit(chunk[1])?;
+            Ok((high << 4) | low)
+        })
+        .collect()
+}
+
+fn decode_hex_digit(byte: u8) -> Result<u8, ()> {
+    match byte {
+        b'0'..=b'9' => Ok(byte - b'0'),
+        b'a'..=b'f' => Ok(byte - b'a' + 10),
+        b'A'..=b'F' => Ok(byte - b'A' + 10),
+        _ => Err(()),
     }
 }

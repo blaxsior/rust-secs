@@ -29,6 +29,12 @@ pub enum SecsModelError {
         actual: Secs2FormatCode,
     },
 
+    #[error("failed to encode value: {0:?}")]
+    EncodeValue(ValueId),
+
+    #[error("failed to decode value: {0:?}")]
+    DecodeValue(ValueId),
+
     #[error("store error: {0}")]
     Store(#[from] StoreError),
 }
