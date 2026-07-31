@@ -44,6 +44,17 @@ impl<T> TaskQueue<T> {
         self.tasks.is_empty()
     }
 
+    pub fn spawn<F>(&mut self, future: F) -> Result<(), TaskSpawnError>
+    where
+        F: Future<Output = T> + 'static,
+    {
+        self.spawn_task(Box::pin(future)).map(|_| ())
+    }
+
+    pub fn run_until_stalled(&mut self) -> VecDeque<T> {
+        self.poll_completed()
+    }
+
     fn spawn_task(&mut self, future: TaskFuture<T>) -> Result<TaskId, TaskSpawnError> {
         let task_id = self.next_task_id()?;
         self.tasks.insert(task_id, future);

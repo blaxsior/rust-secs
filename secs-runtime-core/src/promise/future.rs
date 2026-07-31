@@ -1,22 +1,25 @@
-use alloc::rc::Rc;
 use core::{
     cell::RefCell,
     future::Future,
     pin::Pin,
-    task::{Context, Poll, Waker},
+    task::{Context, Poll},
 };
 
+use futures_channel::oneshot;
+
 pub fn promise<T, E>() -> (PromiseResolver<T, E>, PromiseFuture<T, E>) {
-    let slot = Rc::new(RefCell::new(PromiseState::Pending { waker: None }));
+    let (sender, receiver) = oneshot::channel();
 
     (
-        PromiseResolver { slot: slot.clone() },
-        PromiseFuture { slot },
+        PromiseResolver {
+            sender: RefCell::new(Some(sender)),
+        },
+        PromiseFuture { receiver },
     )
 }
 
 pub struct PromiseResolver<T, E> {
-    slot: Rc<RefCell<PromiseState<T, E>>>,
+    sender: RefCell<Option<oneshot::Sender<Result<T, E>>>>,
 }
 
 impl<T, E> PromiseResolver<T, E> {
@@ -29,63 +32,28 @@ impl<T, E> PromiseResolver<T, E> {
     }
 
     pub fn complete(&self, result: Result<T, E>) -> bool {
-        let waker = {
-            let mut slot = self.slot.borrow_mut();
-            match core::mem::replace(&mut *slot, PromiseState::Consumed) {
-                PromiseState::Pending { waker } => {
-                    *slot = PromiseState::Completed {
-                        result: Some(result),
-                    };
-                    waker
-                }
-                state => {
-                    *slot = state;
-                    return false;
-                }
-            }
-        };
-
-        if let Some(waker) = waker {
-            waker.wake();
-        }
-
-        true
+        self.sender
+            .borrow_mut()
+            .take()
+            .is_some_and(|sender| sender.send(result).is_ok())
     }
 }
 
 pub struct PromiseFuture<T, E> {
-    slot: Rc<RefCell<PromiseState<T, E>>>,
+    receiver: oneshot::Receiver<Result<T, E>>,
 }
 
 impl<T, E> Future for PromiseFuture<T, E> {
     type Output = Result<T, E>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let mut slot = self.slot.borrow_mut();
-
-        match &mut *slot {
-            PromiseState::Pending { waker } => {
-                *waker = Some(cx.waker().clone());
-                Poll::Pending
-            }
-            PromiseState::Completed { result } => {
-                let result = result
-                    .take()
-                    .expect("completed promise must contain result");
-                *slot = PromiseState::Consumed;
-                Poll::Ready(result)
-            }
-            PromiseState::Consumed => {
-                panic!("promise polled after completion")
-            }
+        let this = self.get_mut();
+        match Pin::new(&mut this.receiver).poll(cx) {
+            Poll::Ready(Ok(result)) => Poll::Ready(result),
+            Poll::Ready(Err(_)) => panic!("promise sender dropped before completion"),
+            Poll::Pending => Poll::Pending,
         }
     }
-}
-
-enum PromiseState<T, E> {
-    Pending { waker: Option<Waker> },
-    Completed { result: Option<Result<T, E>> },
-    Consumed,
 }
 
 #[cfg(test)]
@@ -94,7 +62,7 @@ mod tests {
     use alloc::rc::Rc;
     use core::{
         cell::RefCell,
-        task::{Context, RawWaker, RawWakerVTable},
+        task::{Context, RawWaker, RawWakerVTable, Waker},
     };
 
     #[test]

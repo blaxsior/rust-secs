@@ -7,3 +7,4 @@ edition = "2024"
 secs-common.workspace = true
 secs-ii.workspace = true
 thiserror.workspace = true
+futures-channel = { version = "0.3.31", default-features = false, features = ["alloc"] }

@@ -66,7 +66,6 @@ name = "app-std"
 version = "0.1.0"
 dependencies = [
  "env_logger",
- "futures",
  "log",
  "secs-common",
  "secs-ii",
@@ -544,6 +543,7 @@ dependencies = [
 name = "secs-runtime-core"
 version = "0.1.0"
 dependencies = [
+ "futures-channel",
  "secs-common",
  "secs-ii",
  "thiserror",

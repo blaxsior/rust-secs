@@ -27,6 +27,8 @@ pub(crate) struct RuntimeShared {
     system_bytes: SystemByteSource,
     pub commands: VecDeque<RuntimeCommand>,
     pub pending_calls: BTreeMap<TransactionKey, PendingCall>,
+    pub incomming_msgs: VecDeque<RuntimeMessage>,
+    recv_waiters: VecDeque<PromiseResolver<RuntimeMessage, CallError>>,
 }
 
 impl RuntimeShared {
@@ -35,6 +37,8 @@ impl RuntimeShared {
             system_bytes,
             commands: VecDeque::new(),
             pending_calls: BTreeMap::new(),
+            incomming_msgs: VecDeque::new(),
+            recv_waiters: VecDeque::new(),
         }
     }
 
@@ -42,6 +46,32 @@ impl RuntimeShared {
         let system_byte = self.system_bytes.next_system_byte();
         let key = TransactionKey::new(TransactionOwner::Local, system_byte);
         self.send_with_key(key, message)
+    }
+
+    pub(crate) fn request(&mut self, message: Secs2Message) -> RecvFuture {
+        let (resolver, future) = promise();
+        let system_byte = self.system_bytes.next_system_byte();
+        let key = TransactionKey::new(TransactionOwner::Local, system_byte);
+        let should_wait_reply = message.function.is_primary() && message.need_reply;
+        let message = RuntimeMessage::new(key, message);
+
+        if should_wait_reply {
+            self.pending_calls.insert(
+                key,
+                PendingCall {
+                    resolver: Some(resolver),
+                },
+            );
+        } else {
+            resolver.reject(CallError::UnknownToken);
+        }
+
+        self.commands.push_back(RuntimeCommand::Send {
+            message,
+            call: should_wait_reply.then_some(key),
+        });
+
+        future
     }
 
     pub(crate) fn send_with_key(
@@ -64,27 +94,61 @@ impl RuntimeShared {
 
         call_key
     }
+
+    pub(crate) fn push_incomming(&mut self, message: RuntimeMessage) {
+        let message = RuntimeMessage::new(message.transaction_key, message.payload);
+
+        if let Some(resolver) = self.recv_waiters.pop_front() {
+            resolver.resolve(message);
+        } else {
+            self.incomming_msgs.push_back(message);
+        }
+    }
+
+    pub(crate) fn recv(&mut self) -> InboundFuture {
+        let (resolver, future) = promise();
+
+        if let Some(message) = self.incomming_msgs.pop_front() {
+            resolver.resolve(message);
+        } else {
+            self.recv_waiters.push_back(resolver);
+        }
+
+        future
+    }
 }
 
 #[derive(Clone)]
-pub(crate) struct RuntimeHandle {
+pub struct SecsHandle {
     shared: Rc<RefCell<RuntimeShared>>,
 }
 
-impl RuntimeHandle {
+impl SecsHandle {
     pub(crate) fn new(shared: Rc<RefCell<RuntimeShared>>) -> Self {
         Self { shared }
     }
 
-    pub(crate) fn send(&self, message: Secs2Message) -> Option<TransactionKey> {
+    pub fn send(&self, message: Secs2Message) -> Option<TransactionKey> {
         self.shared.borrow_mut().send(message)
     }
 
-    pub(crate) fn reply(&self, request_key: TransactionKey, message: Secs2Message) {
+    pub fn send_with_key(&self, request_key: TransactionKey, message: Secs2Message) {
         self.shared.borrow_mut().send_with_key(request_key, message);
     }
 
-    pub(crate) fn recv_call(&self, key: TransactionKey) -> RecvFuture {
+    pub fn reply(&self, key: TransactionKey, message: Secs2Message) {
+        self.send_with_key(key, message);
+    }
+
+    pub fn request(&self, message: Secs2Message) -> RecvFuture {
+        self.shared.borrow_mut().request(message)
+    }
+
+    pub fn recv(&self) -> InboundFuture {
+        self.shared.borrow_mut().recv()
+    }
+
+    pub fn recv_call(&self, key: TransactionKey) -> RecvFuture {
         let mut shared = self.shared.borrow_mut();
         let (resolver, future) = promise();
 
@@ -104,3 +168,4 @@ impl RuntimeHandle {
 }
 
 pub type RecvFuture = PromiseFuture<Secs2Message, CallError>;
+pub type InboundFuture = PromiseFuture<RuntimeMessage, CallError>;

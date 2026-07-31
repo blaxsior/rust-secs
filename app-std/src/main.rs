@@ -2,14 +2,12 @@ use std::net::SocketAddr;
 use std::thread;
 use std::time::Duration;
 
-use futures::executor::LocalPool;
 use secs_common::{ConnectionRole, SystemByteSource};
 use secs_ii::item::Secs2Variant;
 use secs_ii::{FunctionId, Secs2Message, StreamId};
-use secs_runtime::{
-    HandlerError, SecsRuntime, SecsScenario, SecsService, ServiceContext, TimeoutConfig,
-};
-use secs_runtime_std::{LocalPoolTaskRunner, StdSecsTimer, TcpServerDataSource};
+use secs_runtime::{SecsHandle, SecsRuntime, TimeoutConfig};
+use secs_runtime_core::TaskQueue;
+use secs_runtime_std::{StdSecsTimer, TcpServerDataSource};
 use secs_transport::transport::SessionId;
 use secs_transport::transport::hsms::config::HsmsTransportConfig;
 use secs_transport::transport::hsms::protocol::HsmsTransport;
@@ -57,79 +55,51 @@ fn build_s1f14_reply(request: &Secs2Message) -> Option<Secs2Message> {
     ))
 }
 
-struct EstablishCommunicationService;
+fn build_s1f13_request() -> Secs2Message {
+    Secs2Message::new(
+        StreamId(1),
+        FunctionId(13),
+        true,
+        Some(Secs2Variant::list(vec![
+            Secs2Variant::ascii("hello"),
+            Secs2Variant::ascii("world"),
+        ])),
+    )
+}
 
-impl SecsService for EstablishCommunicationService {
-    fn serve(&mut self, ctx: &mut ServiceContext) -> Result<(), HandlerError> {
-        let Some(message) = ctx.recv() else {
-            return Ok(());
-        };
+async fn process_incoming(handle: SecsHandle) {
+    loop {
+        match handle.recv().await {
+            Ok(inbound) => {
+                let key = inbound.transaction_key;
+                let message = inbound.payload;
 
-        log::debug!(
-            "received routed message: S{}F{}, need_reply={}",
-            message.stream.0,
-            message.function.0,
-            message.need_reply
-        );
+                log::debug!(
+                    "received message: S{}F{}, need_reply={}",
+                    message.stream.0,
+                    message.function.0,
+                    message.need_reply
+                );
 
-        if let Some(reply) = build_s1f14_reply(&message) {
-            log::debug!("send reply: S1F14");
-            ctx.reply(reply)?;
+                if let Some(reply) = build_s1f14_reply(&message) {
+                    log::debug!("send response: S1F14");
+                    handle.reply(key, reply);
+                }
+            }
+            Err(error) => log::error!("recv failed: {:?}", error),
         }
-
-        Ok(())
     }
 }
 
-struct EstablishCommunicationScene;
-
-impl SecsScenario for EstablishCommunicationScene {
-    async fn run(self, ctx: secs_runtime::ScenarioContext) -> Result<(), HandlerError> {
-        let _key = ctx.send(Secs2Message::new(
-            StreamId(1),
-            FunctionId(13),
-            true,
-            Some(Secs2Variant::list(vec![
-                Secs2Variant::ascii("hello"),
-                Secs2Variant::ascii("world"),
-            ])),
-        ));
-
-        let key = _key.unwrap();
-
-        match ctx.recv(key).await {
-            Ok(data) => log::info!(
-                "recv1 S{}F{} W={}",
-                data.stream.0,
-                data.function.0,
-                data.need_reply
-            ),
-            Err(e) => log::error!("error occured {:?}", e),
-        }
-
-        let _key2 = ctx.send(Secs2Message::new(
-            StreamId(1),
-            FunctionId(13),
-            true,
-            Some(Secs2Variant::list(vec![
-                Secs2Variant::ascii("hello"),
-                Secs2Variant::ascii("world"),
-            ])),
-        ));
-
-        let key2 = _key2.unwrap();
-
-        match ctx.recv(key2).await {
-            Ok(data) => log::info!(
-                "recv2 S{}F{} W={}",
-                data.stream.0,
-                data.function.0,
-                data.need_reply
-            ),
-            Err(e) => log::error!("error occured {:?}", e),
-        }
-
-        Ok(())
+async fn request_establish_communication(handle: SecsHandle) {
+    match handle.request(build_s1f13_request()).await {
+        Ok(data) => log::info!(
+            "request reply S{}F{} W={}",
+            data.stream.0,
+            data.function.0,
+            data.need_reply
+        ),
+        Err(error) => log::error!("request failed: {:?}", error),
     }
 }
 
@@ -149,24 +119,26 @@ fn main() {
     let source = TcpServerDataSource::new(local_addr);
     let transport = HsmsTransport::new(&config, Box::new(source), SystemByteSource::new());
     let timer = StdSecsTimer::new();
-    let mut task_pool = LocalPool::new();
-    let task_runner = LocalPoolTaskRunner::new(task_pool.spawner());
-    let mut runtime = SecsRuntime::with_task_runner(
+    let mut task_pool = TaskQueue::new();
+    let mut runtime = SecsRuntime::new(
         transport,
         timer,
         SystemByteSource::new(),
         timeout_config(&config),
-        task_runner,
     );
-    runtime.register_service(StreamId(1), FunctionId(13), EstablishCommunicationService);
+    let handle = runtime.handle();
+    task_pool
+        .spawn(process_incoming(handle.clone()))
+        .expect("failed to spawn incoming task");
+    // task_pool
+    //     .spawn(request_establish_communication(handle.clone()))
+    //     .expect("failed to spawn request flow");
 
     log::debug!("starting HSMS active transport: {}", local_addr);
     if let Err(error) = runtime.start() {
         log::error!("failed to start runtime: {:?}", error);
         return;
     }
-
-    let mut count: u16 = 1;
 
     loop {
         if let Err(error) = runtime.tick() {
@@ -182,26 +154,8 @@ fn main() {
                 thread::sleep(Duration::from_millis(200));
             }
         }
-        task_pool.run_until_stalled();
-
-        while let Some(message) = runtime.poll_received() {
-            log::debug!(
-                "received unrouted message: S{}F{}, need_reply={}",
-                message.stream.0,
-                message.function.0,
-                message.need_reply
-            );
-        }
+        let _ = task_pool.run_until_stalled();
 
         thread::sleep(Duration::from_millis(10));
-
-        if (count % 1000) == 0 {
-            log::debug!("start scenario");
-            count = 0;
-            if let Err(error) = runtime.start_scenario(EstablishCommunicationScene) {
-                log::error!("failed to start scenario: {:?}", error);
-            }
-        }
-        count = count.overflowing_add(1).0;
     }
 }
