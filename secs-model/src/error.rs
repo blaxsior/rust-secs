@@ -1,16 +1,34 @@
-use crate::SecsKey;
+use secs_ii::item::Secs2FormatCode;
+
+use crate::{EventId, ReportId, StoreError, ValueId};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SecsModelError {
     #[error("unknown value key: {0:?}")]
-    UnknownValue(SecsKey),
+    UnknownValue(ValueId),
 
     #[error("unknown report key: {0:?}")]
-    UnknownReport(SecsKey),
+    UnknownReport(ReportId),
 
     #[error("unknown event key: {0:?}")]
-    UnknownEvent(SecsKey),
+    UnknownEvent(EventId),
 
     #[error("value is read only: {0:?}")]
-    ReadOnlyValue(SecsKey),
+    ReadOnlyValue(ValueId),
+
+    #[error("report is read only: {0:?}")]
+    ReadOnlyReport(ReportId),
+
+    #[error("event is read only: {0:?}")]
+    ReadOnlyEvent(EventId),
+
+    #[error("invalid value format for {id:?}: expected {expected:?}, actual {actual:?}")]
+    InvalidValueFormat {
+        id: ValueId,
+        expected: Secs2FormatCode,
+        actual: Secs2FormatCode,
+    },
+
+    #[error("store error: {0}")]
+    Store(#[from] StoreError),
 }

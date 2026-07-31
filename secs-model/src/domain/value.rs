@@ -1,64 +1,229 @@
-use secs_ii::item::{Secs2FormatCode, Secs2Variant};
+use alloc::{borrow::ToOwned, collections::BTreeMap, string::String};
+use core::fmt;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ValueBinding {
-    Runtime,
-    Persistent,
-    Computed,
-    External,
+use secs_ii::item::{Secs2FormatCode, Secs2Variant};
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    NoopValueDataRepository, NoopValueSpecRepository, SecsModelError, StoreError,
+    ValueDataRepository, ValueSpecRepository,
+};
+
+#[repr(transparent)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct ValueId(String);
+
+impl ValueId {
+    pub fn new(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_string(self) -> String {
+        self.0
+    }
 }
 
-impl ValueBinding {
-    pub fn is_persistent(self) -> bool {
-        matches!(self, Self::Persistent)
+impl fmt::Debug for ValueId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("VID: ").field(&self.0).finish()
+    }
+}
+
+impl From<String> for ValueId {
+    fn from(value: String) -> Self {
+        Self::new(value)
+    }
+}
+
+impl From<&str> for ValueId {
+    fn from(value: &str) -> Self {
+        Self(value.to_owned())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ValueSpec {
+    pub id: ValueId,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    pub format: Secs2FormatCode,
+    #[serde(default = "crate::domain::default_policy::persistent")]
+    pub persistent: bool,
+    #[serde(default = "crate::domain::default_policy::readonly")]
+    pub readonly: bool,
+}
+
+impl ValueSpec {
+    pub fn new(id: ValueId, format: Secs2FormatCode) -> Self {
+        Self {
+            id,
+            name: None,
+            description: None,
+            format,
+            persistent: false,
+            readonly: false,
+        }
+    }
+
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    pub fn is_persistent(mut self) -> Self {
+        self.persistent = true;
+        self
+    }
+
+    pub fn is_readonly(mut self) -> Self {
+        self.readonly = true;
+        self
     }
 }
 
 #[derive(Debug)]
-pub struct ValueEntry {
-    format: Secs2FormatCode,
-    binding: ValueBinding,
-    writable: bool,
-    value: Option<Secs2Variant>,
+pub struct ValueData {
+    pub id: ValueId,
+    pub value: Secs2Variant,
 }
 
-impl ValueEntry {
-    pub fn new(format: Secs2FormatCode, binding: ValueBinding) -> Self {
-        Self {
-            format,
-            binding,
-            writable: true,
-            value: None,
+impl ValueData {
+    pub fn new(id: ValueId, value: Secs2Variant) -> Self {
+        Self { id, value }
+    }
+}
+
+#[derive(Debug)]
+pub struct ValueDictionary<S, D> {
+    specs: BTreeMap<ValueId, ValueSpec>,
+    values: BTreeMap<ValueId, Secs2Variant>,
+    spec_repository: S,
+    data_repository: D,
+}
+
+impl<S, D> ValueDictionary<S, D>
+where
+    S: ValueSpecRepository,
+    D: ValueDataRepository,
+{
+    pub fn with_store(spec_repository: S, data_repository: D) -> Result<Self, StoreError> {
+        let mut dictionary = Self {
+            specs: BTreeMap::new(),
+            values: BTreeMap::new(),
+            spec_repository,
+            data_repository,
+        };
+
+        for spec in dictionary.spec_repository.load_all()? {
+            dictionary.insert_spec(spec);
+        }
+
+        for data in dictionary.data_repository.load_all()? {
+            dictionary.insert_data(data);
+        }
+
+        Ok(dictionary)
+    }
+
+    fn insert_spec(&mut self, spec: ValueSpec) {
+        self.specs.insert(spec.id.clone(), spec);
+    }
+
+    fn insert_data(&mut self, data: ValueData) {
+        if self.specs.contains_key(&data.id) {
+            self.values.insert(data.id, data.value);
         }
     }
 
-    pub fn with_value(mut self, value: Secs2Variant) -> Self {
-        self.value = Some(value);
-        self
+    pub fn spec(&self, id: &ValueId) -> Option<&ValueSpec> {
+        self.specs.get(id)
     }
 
-    pub fn readonly(mut self) -> Self {
-        self.writable = false;
-        self
+    pub fn read(&self, id: &ValueId) -> Result<Option<&Secs2Variant>, SecsModelError> {
+        self.spec(id)
+            .ok_or_else(|| SecsModelError::UnknownValue(id.clone()))?;
+
+        Ok(self.values.get(id))
     }
 
-    pub fn format(&self) -> Secs2FormatCode {
-        self.format
+    pub fn write(&mut self, id: &ValueId, value: Secs2Variant) -> Result<(), SecsModelError> {
+        let spec = self
+            .spec(id)
+            .ok_or_else(|| SecsModelError::UnknownValue(id.clone()))?;
+
+        if spec.readonly {
+            log::warn!("skip value write because value is readonly: {:?}", id);
+            return Err(SecsModelError::ReadOnlyValue(id.clone()));
+        }
+
+        let actual = value.format_code();
+        if spec.format != actual {
+            log::warn!(
+                "skip value write because value format is invalid: {:?}, expected={:?}, actual={:?}",
+                id,
+                spec.format,
+                actual
+            );
+            return Err(SecsModelError::InvalidValueFormat {
+                id: id.clone(),
+                expected: spec.format,
+                actual,
+            });
+        }
+
+        let data = ValueData::new(id.clone(), value);
+        // 영구 저장이 필요한 경우 저장
+        if spec.persistent {
+            if let Err(err) = self.data_repository.save(&data) {
+                log::error!("failed to save data on repository {:?}", err);
+            }
+        }
+        self.values.insert(data.id, data.value);
+        Ok(())
     }
 
-    pub fn binding(&self) -> ValueBinding {
-        self.binding
-    }
 
-    pub fn is_writable(&self) -> bool {
-        self.writable
-    }
 
-    pub fn value(&self) -> Option<&Secs2Variant> {
-        self.value.as_ref()
-    }
+    pub fn remove(&mut self, id: &ValueId) -> Result<(), SecsModelError> {
+        let spec = self
+            .spec(id)
+            .ok_or_else(|| SecsModelError::UnknownValue(id.clone()))?;
 
-    pub fn set_value(&mut self, value: Secs2Variant) {
-        self.value = Some(value);
+        if spec.readonly {
+            log::warn!("skip value write because value is readonly: {:?}", id);
+            return Err(SecsModelError::ReadOnlyValue(id.clone()));
+        }
+
+        if spec.persistent {
+            if let Err(err) = self.data_repository.remove(id) {
+                log::error!("failed to remove data from repository {:?}", err);
+            }
+        }
+        self.values.remove(id);
+        Ok(())
+    }
+}
+
+impl ValueDictionary<NoopValueSpecRepository, NoopValueDataRepository> {
+    pub fn new() -> Self {
+        Self {
+            specs: BTreeMap::new(),
+            values: BTreeMap::new(),
+            spec_repository: NoopValueSpecRepository,
+            data_repository: NoopValueDataRepository,
+        }
     }
 }

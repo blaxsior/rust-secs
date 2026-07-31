@@ -19,6 +19,7 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     convert::secs2::serialize::Encode,
@@ -235,7 +236,8 @@ impl TryFrom<&[u8]> for Secs2Variant {
 }
 
 /// SECS2 아이템 타입 코드를 표현하는 enum
-#[derive(Debug, Clone, Copy, TryFromPrimitive, IntoPrimitive, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum Secs2FormatCode {
     List = 0o00,
