@@ -531,6 +531,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "secs-model"
+version = "0.1.0"
+dependencies = [
+ "secs-ii",
+ "thiserror",
+]
+
+[[package]]
 name = "secs-runtime"
 version = "0.1.0"
 dependencies = [

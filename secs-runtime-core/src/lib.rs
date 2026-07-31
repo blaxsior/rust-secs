@@ -7,6 +7,7 @@ pub mod io;
 pub mod machine;
 pub mod message;
 pub mod promise;
+pub mod store;
 pub mod timer;
 
 pub use error::{MachineError, RuntimeError};
@@ -16,6 +17,7 @@ pub use message::RuntimeMessage;
 pub use promise::{
     PromiseFuture, PromiseResolver, TaskFuture, TaskQueue, TaskRunner, TaskSpawnError, promise,
 };
+pub use store::DataStore;
 pub use timer::{SecsTimer, TimeoutTicket};
 
 pub use secs_common::{
