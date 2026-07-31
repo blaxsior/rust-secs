@@ -550,6 +550,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "secs-runtime-handler"
+version = "0.1.0"
+dependencies = [
+ "secs-ii",
+ "secs-runtime",
+ "secs-runtime-core",
+ "thiserror",
+]
+
+[[package]]
 name = "secs-runtime-std"
 version = "0.1.0"
 dependencies = [

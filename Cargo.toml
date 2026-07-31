@@ -5,6 +5,7 @@ members = [
     "secs-ii", 
     "secs-runtime-core",
     "secs-runtime",
+    "secs-runtime-handler",
     "secs-runtime-web",
     "secs-runtime-std",
     "secs-transport",
@@ -16,6 +17,7 @@ secs-runtime-std = { path = "secs-runtime-std" }
 secs-ii = { path = "secs-ii" }
 secs-runtime-core = { path = "secs-runtime-core" }
 secs-runtime = { path = "secs-runtime" }
+secs-runtime-handler = { path = "secs-runtime-handler" }
 secs-runtime-web = { path = "secs-runtime-web" }
 secs-transport = { path = "secs-transport" }
 
