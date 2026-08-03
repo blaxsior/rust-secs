@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 secs-common.workspace = true
 secs-ii.workspace = true
+secs-model.workspace = true
 secs-runtime.workspace = true
 secs-runtime-core.workspace = true
 secs-runtime-std.workspace = true

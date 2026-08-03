@@ -1,0 +1,18 @@
+{
+  "MLDN": {
+    "id": "MLDN",
+    "name": "ModelName",
+    "description": "equipment model name",
+    "format": "ascii",
+    "persistent": true,
+    "readonly": false
+  },
+  "SOFTREV": {
+    "id": "SOFTREV",
+    "name": "SoftwareRevision",
+    "description": "equipment software revision",
+    "format": "ascii",
+    "persistent": true,
+    "readonly": false
+  }
+}

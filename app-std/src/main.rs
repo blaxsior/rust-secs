@@ -5,8 +5,10 @@ use std::time::Duration;
 use secs_common::{ConnectionRole, SystemByteSource};
 use secs_ii::item::Secs2Variant;
 use secs_ii::{FunctionId, Secs2Message, StreamId};
+use secs_model::{ValueData, ValueDictionary, ValueId, ValueSpec};
 use secs_runtime::{SecsHandle, SecsRuntime, TimeoutConfig};
-use secs_runtime_std::{StdSecsTimer, TcpServerDataSource};
+use secs_runtime_std::model::{JsonCodec, ValueDataFileRepository, ValueSpecFileRepository};
+use secs_runtime_std::{FileDataStore, StdSecsTimer, TcpServerDataSource};
 use secs_transport::transport::SessionId;
 use secs_transport::transport::hsms::config::HsmsTransportConfig;
 use secs_transport::transport::hsms::protocol::HsmsTransport;
@@ -66,6 +68,55 @@ fn build_s1f13_request() -> Secs2Message {
     )
 }
 
+fn init_values() {
+    let spec_store = match FileDataStore::<_, ValueSpec>::new(
+        "app-std/config/value-spec.json",
+        JsonCodec,
+    ) {
+        Ok(store) => store,
+        Err(error) => {
+            log::error!("failed to open value spec store: {:?}", error);
+            return;
+        }
+    };
+    let data_store = match FileDataStore::<_, ValueData>::new(
+        "app-std/data/value-data.json",
+        JsonCodec,
+    ) {
+        Ok(store) => store,
+        Err(error) => {
+            log::error!("failed to open value data store: {:?}", error);
+            return;
+        }
+    };
+
+    let spec_repository = ValueSpecFileRepository::new(spec_store);
+    let data_repository = ValueDataFileRepository::new(data_store);
+    let mut values = match ValueDictionary::with_store(spec_repository, data_repository) {
+        Ok(values) => values,
+        Err(error) => {
+            log::error!("failed to initialize value dictionary: {:?}", error);
+            return;
+        }
+    };
+
+    if let Ok(v) = values.read(&ValueId::from("MLDN")) {
+        log::info!("mldn init = {:?}", v);
+    }
+    
+    if let Ok(v) = values.read(&ValueId::from("SOFTREV")) {
+        log::info!("softrev init  = {:?}", v);
+    }
+
+    if let Err(error) = values.write(&ValueId::from("MLDN"), Secs2Variant::ascii("TESTMODELNO")) {
+        log::error!("failed to write MLDN: {:?}", error);
+    }
+
+    if let Err(error) = values.write(&ValueId::from("SOFTREV"), Secs2Variant::ascii("0.1.0")) {
+        log::error!("failed to write SOFTREV: {:?}", error);
+    }
+}
+
 async fn process_incoming(handle: SecsHandle) {
     loop {
         match handle.recv().await {
@@ -104,6 +155,7 @@ async fn request_establish_communication(handle: SecsHandle) {
 
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("debug")).init();
+    init_values();
 
     // let remote_addr = env::args()
     //     .nth(1)
