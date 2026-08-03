@@ -9,6 +9,7 @@ pub mod datasource;
 pub mod logger;
 pub mod runtime;
 pub mod timer;
+pub mod convert;
 
 pub use datasource::{WebDataSource, WebDataSourceHandle};
 pub use logger::{WebLogger, init_logger, init_logger_with_callback, set_log_callback};
