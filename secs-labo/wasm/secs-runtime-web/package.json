@@ -1,0 +1,15 @@
+{
+  "name": "secs-runtime-web",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "secs_runtime_web_bg.wasm",
+    "secs_runtime_web.js",
+    "secs_runtime_web.d.ts"
+  ],
+  "main": "secs_runtime_web.js",
+  "types": "secs_runtime_web.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
