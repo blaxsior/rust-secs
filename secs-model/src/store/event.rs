@@ -3,9 +3,9 @@ use alloc::vec::Vec;
 use crate::{store::StoreError, EventId, EventSpec};
 
 pub trait EventRepository {
-    fn load_all(&mut self) -> Result<Vec<EventSpec>, StoreError>;
+    fn find_all(&mut self) -> Result<Vec<EventSpec>, StoreError>;
     fn save(&mut self, spec: &EventSpec) -> Result<(), StoreError>;
-    fn remove(&mut self, id: &EventId) -> Result<(), StoreError>;
+    fn delete(&mut self, id: &EventId) -> Result<(), StoreError>;
 }
 
 /// 비어 있는 default event repository
@@ -13,7 +13,7 @@ pub trait EventRepository {
 pub struct NoopEventRepository;
 
 impl EventRepository for NoopEventRepository {
-    fn load_all(&mut self) -> Result<Vec<EventSpec>, StoreError> {
+    fn find_all(&mut self) -> Result<Vec<EventSpec>, StoreError> {
         Ok(Vec::new())
     }
 
@@ -21,7 +21,7 @@ impl EventRepository for NoopEventRepository {
         Ok(())
     }
 
-    fn remove(&mut self, _id: &EventId) -> Result<(), StoreError> {
+    fn delete(&mut self, _id: &EventId) -> Result<(), StoreError> {
         Ok(())
     }
 }

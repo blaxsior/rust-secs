@@ -5,19 +5,19 @@ use serde::{Serialize, de::DeserializeOwned};
 use crate::model::file::codec::ModelCodec;
 
 #[derive(Debug, Default, Clone, Copy)]
-pub struct JsonCodec;
+pub struct YamlCodec;
 
-impl<T> ModelCodec<T> for JsonCodec
+impl<T> ModelCodec<T> for YamlCodec
 where
     T: Serialize + DeserializeOwned,
 {
-    type Error = serde_json::Error;
+    type Error = serde_yaml::Error;
 
     fn decode(&self, bytes: &[u8]) -> Result<BTreeMap<String, T>, Self::Error> {
-        serde_json::from_slice(bytes)
+        serde_yaml::from_slice(bytes)
     }
 
     fn encode(&self, items: &BTreeMap<String, T>) -> Result<Vec<u8>, Self::Error> {
-        serde_json::to_vec_pretty(items)
+        serde_yaml::to_string(items).map(String::into_bytes)
     }
 }

@@ -6,8 +6,8 @@ pub enum StoreError {
     #[error("failed to save spec")]
     SaveFailed,
 
-    #[error("failed to remove spec")]
-    RemoveFailed,
+    #[error("failed to delete spec")]
+    DeleteFailed,
 
     #[error("store operation is not supported")]
     Unsupported,

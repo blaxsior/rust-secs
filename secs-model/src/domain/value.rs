@@ -129,11 +129,11 @@ where
             data_repository,
         };
 
-        for spec in dictionary.spec_repository.load_all()? {
+        for spec in dictionary.spec_repository.find_all()? {
             dictionary.insert_spec(spec);
         }
 
-        for data in dictionary.data_repository.load_all()? {
+        for data in dictionary.data_repository.find_all()? {
             dictionary.insert_data(data);
         }
 
@@ -225,7 +225,7 @@ where
         }
 
         if spec.persistent {
-            if let Err(err) = self.data_repository.remove(id) {
+            if let Err(err) = self.data_repository.delete(id) {
                 log::error!("failed to remove data from repository {:?}", err);
             }
         }

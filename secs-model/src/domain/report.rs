@@ -113,7 +113,7 @@ where
             reports: BTreeMap::new(),
             repository,
         };
-        for spec in dictionary.repository.load_all()? {
+        for spec in dictionary.repository.find_all()? {
             dictionary.insert(spec);
         }
 
@@ -152,7 +152,7 @@ where
         }
 
         if spec.persistent {
-            if let Err(err) = self.repository.remove(id) {
+            if let Err(err) = self.repository.delete(id) {
                 log::error!("failed to remove report from repository {:?}", err);
             }
         }

@@ -3,9 +3,9 @@ use alloc::vec::Vec;
 use crate::{store::StoreError, ReportId, ReportSpec};
 
 pub trait ReportRepository {
-    fn load_all(&mut self) -> Result<Vec<ReportSpec>, StoreError>;
+    fn find_all(&mut self) -> Result<Vec<ReportSpec>, StoreError>;
     fn save(&mut self, spec: &ReportSpec) -> Result<(), StoreError>;
-    fn remove(&mut self, id: &ReportId) -> Result<(), StoreError>;
+    fn delete(&mut self, id: &ReportId) -> Result<(), StoreError>;
 }
 
 /// 비어 있는 default report repository
@@ -13,7 +13,7 @@ pub trait ReportRepository {
 pub struct NoopReportRepository;
 
 impl ReportRepository for NoopReportRepository {
-    fn load_all(&mut self) -> Result<Vec<ReportSpec>, StoreError> {
+    fn find_all(&mut self) -> Result<Vec<ReportSpec>, StoreError> {
         Ok(Vec::new())
     }
 
@@ -21,7 +21,7 @@ impl ReportRepository for NoopReportRepository {
         Ok(())
     }
 
-    fn remove(&mut self, _id: &ReportId) -> Result<(), StoreError> {
+    fn delete(&mut self, _id: &ReportId) -> Result<(), StoreError> {
         Ok(())
     }
 }

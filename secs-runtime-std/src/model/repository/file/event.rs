@@ -1,50 +1,36 @@
 use secs_model::{EventId, EventRepository, EventSpec, StoreError};
 use secs_runtime_core::DataStore;
 
-use crate::model::{
-    file::codec::ModelCodec,
-    repository::file::{load_all, remove, upsert},
-};
-
 #[derive(Debug)]
-pub struct EventFileRepository<S, C> {
+pub struct EventFileRepository<S> {
     store: S,
-    codec: C,
-    key: String,
 }
 
-impl<S, C> EventFileRepository<S, C> {
-    pub fn new(store: S, codec: C, key: impl Into<String>) -> Self {
-        Self {
-            store,
-            codec,
-            key: key.into(),
-        }
+impl<S> EventFileRepository<S> {
+    pub fn new(store: S) -> Self {
+        Self { store }
     }
 }
 
-impl<S, C> EventRepository for EventFileRepository<S, C>
+impl<S> EventRepository for EventFileRepository<S>
 where
-    S: DataStore,
-    C: ModelCodec<EventSpec>,
+    S: DataStore<EventSpec>,
 {
-    fn load_all(&mut self) -> Result<Vec<EventSpec>, StoreError> {
-        load_all(&mut self.store, &self.codec, &self.key)
+    fn find_all(&mut self) -> Result<Vec<EventSpec>, StoreError> {
+        self.store
+            .find_all()
+            .map_err(|_| StoreError::LoadFailed)
     }
 
     fn save(&mut self, spec: &EventSpec) -> Result<(), StoreError> {
-        upsert(
-            &mut self.store,
-            &self.codec,
-            &self.key,
-            spec.clone(),
-            |left, right| left.id == right.id,
-        )
+        self.store
+            .save(spec.id.as_str(), spec)
+            .map_err(|_| StoreError::SaveFailed)
     }
 
-    fn remove(&mut self, id: &EventId) -> Result<(), StoreError> {
-        remove(&mut self.store, &self.codec, &self.key, |spec: &EventSpec| {
-            &spec.id == id
-        })
+    fn delete(&mut self, id: &EventId) -> Result<(), StoreError> {
+        self.store
+            .delete(id.as_str())
+            .map_err(|_| StoreError::DeleteFailed)
     }
 }

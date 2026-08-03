@@ -3,77 +3,58 @@ use secs_model::{
 };
 use secs_runtime_core::DataStore;
 
-use crate::model::{
-    file::codec::ModelCodec,
-    repository::file::{load_all, remove, upsert},
-};
-
 #[derive(Debug)]
-pub struct ValueSpecFileRepository<S, C> {
+pub struct ValueSpecFileRepository<S> {
     store: S,
-    codec: C,
-    key: String,
 }
 
-impl<S, C> ValueSpecFileRepository<S, C> {
-    pub fn new(store: S, codec: C, key: impl Into<String>) -> Self {
-        Self {
-            store,
-            codec,
-            key: key.into(),
-        }
+impl<S> ValueSpecFileRepository<S> {
+    pub fn new(store: S) -> Self {
+        Self { store }
     }
 }
 
-impl<S, C> ValueSpecRepository for ValueSpecFileRepository<S, C>
+impl<S> ValueSpecRepository for ValueSpecFileRepository<S>
 where
-    S: DataStore,
-    C: ModelCodec<ValueSpec>,
+    S: DataStore<ValueSpec>,
 {
-    fn load_all(&mut self) -> Result<Vec<ValueSpec>, StoreError> {
-        load_all(&mut self.store, &self.codec, &self.key)
+    fn find_all(&mut self) -> Result<Vec<ValueSpec>, StoreError> {
+        self.store
+            .find_all()
+            .map_err(|_| StoreError::LoadFailed)
     }
 }
 
 #[derive(Debug)]
-pub struct ValueDataFileRepository<S, C> {
+pub struct ValueDataFileRepository<S> {
     store: S,
-    codec: C,
-    key: String,
 }
 
-impl<S, C> ValueDataFileRepository<S, C> {
-    pub fn new(store: S, codec: C, key: impl Into<String>) -> Self {
-        Self {
-            store,
-            codec,
-            key: key.into(),
-        }
+impl<S> ValueDataFileRepository<S> {
+    pub fn new(store: S) -> Self {
+        Self { store }
     }
 }
 
-impl<S, C> ValueDataRepository for ValueDataFileRepository<S, C>
+impl<S> ValueDataRepository for ValueDataFileRepository<S>
 where
-    S: DataStore,
-    C: ModelCodec<ValueData>,
+    S: DataStore<ValueData>,
 {
-    fn load_all(&mut self) -> Result<Vec<ValueData>, StoreError> {
-        load_all(&mut self.store, &self.codec, &self.key)
+    fn find_all(&mut self) -> Result<Vec<ValueData>, StoreError> {
+        self.store
+            .find_all()
+            .map_err(|_| StoreError::LoadFailed)
     }
 
     fn save(&mut self, data: &ValueData) -> Result<(), StoreError> {
-        upsert(
-            &mut self.store,
-            &self.codec,
-            &self.key,
-            data.clone(),
-            |left, right| left.id == right.id,
-        )
+        self.store
+            .save(data.id.as_str(), data)
+            .map_err(|_| StoreError::SaveFailed)
     }
 
-    fn remove(&mut self, id: &ValueId) -> Result<(), StoreError> {
-        remove(&mut self.store, &self.codec, &self.key, |data: &ValueData| {
-            &data.id == id
-        })
+    fn delete(&mut self, id: &ValueId) -> Result<(), StoreError> {
+        self.store
+            .delete(id.as_str())
+            .map_err(|_| StoreError::DeleteFailed)
     }
 }
