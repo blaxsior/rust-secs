@@ -1,7 +1,8 @@
-use alloc::{
+use std::{
     boxed::Box,
     collections::BTreeMap,
     string::String,
+    sync::Arc,
     vec::Vec,
 };
 use core::{future::Future, pin::Pin};
@@ -13,9 +14,9 @@ use secs_runtime_core::RuntimeMessage;
 use crate::{SecsContext, SecsHandlerError};
 
 pub type BoxSecsRouteFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<(), SecsHandlerError>> + 'a>>;
+    Pin<Box<dyn Future<Output = Result<(), SecsHandlerError>> + Send + 'a>>;
 pub type BoxSecsActionFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<(), SecsHandlerError>> + 'a>>;
+    Pin<Box<dyn Future<Output = Result<(), SecsHandlerError>> + Send + 'a>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SecsRoute {
@@ -52,6 +53,12 @@ impl SecsMatcher {
     }
 }
 
+impl From<SecsRoute> for SecsMatcher {
+    fn from(value: SecsRoute) -> Self {
+        Self::Exact(value)
+    }
+}
+
 impl SecsRoute {
     pub fn new(stream: StreamId, function: FunctionId) -> Self {
         Self { stream, function }
@@ -62,9 +69,9 @@ impl SecsRoute {
     }
 }
 
-pub trait SecsRouteHandler {
+pub trait SecsRouteHandler: Send + Sync {
     fn handle<'a>(
-        &'a mut self,
+        &'a self,
         ctx: SecsContext,
         message: RuntimeMessage,
     ) -> BoxSecsRouteFuture<'a>;
@@ -72,11 +79,11 @@ pub trait SecsRouteHandler {
 
 impl<F, Fut> SecsRouteHandler for F
 where
-    F: FnMut(SecsContext, RuntimeMessage) -> Fut,
-    Fut: Future<Output = Result<(), SecsHandlerError>> + 'static,
+    F: Fn(SecsContext, RuntimeMessage) -> Fut + Send + Sync,
+    Fut: Future<Output = Result<(), SecsHandlerError>> + Send + 'static,
 {
     fn handle<'a>(
-        &'a mut self,
+        &'a self,
         ctx: SecsContext,
         message: RuntimeMessage,
     ) -> BoxSecsRouteFuture<'a> {
@@ -84,16 +91,16 @@ where
     }
 }
 
-pub trait SecsAction {
-    fn call<'a>(&'a mut self, ctx: SecsContext) -> BoxSecsActionFuture<'a>;
+pub trait SecsAction: Send + Sync {
+    fn call<'a>(&'a self, ctx: SecsContext) -> BoxSecsActionFuture<'a>;
 }
 
 impl<F, Fut> SecsAction for F
 where
-    F: FnMut(SecsContext) -> Fut,
-    Fut: Future<Output = Result<(), SecsHandlerError>> + 'static,
+    F: Fn(SecsContext) -> Fut + Send + Sync,
+    Fut: Future<Output = Result<(), SecsHandlerError>> + Send + 'static,
 {
-    fn call<'a>(&'a mut self, ctx: SecsContext) -> BoxSecsActionFuture<'a> {
+    fn call<'a>(&'a self, ctx: SecsContext) -> BoxSecsActionFuture<'a> {
         Box::pin(self(ctx))
     }
 }
@@ -108,6 +115,35 @@ struct SecsRouteEntry {
     handler: Box<dyn SecsRouteHandler>,
 }
 
+struct ArcSecsRouteHandler<H>
+where
+    H: SecsRouteHandler + ?Sized,
+{
+    inner: Arc<H>,
+}
+
+impl<H> ArcSecsRouteHandler<H>
+where
+    H: SecsRouteHandler + ?Sized,
+{
+    fn new(inner: Arc<H>) -> Self {
+        Self { inner }
+    }
+}
+
+impl<H> SecsRouteHandler for ArcSecsRouteHandler<H>
+where
+    H: SecsRouteHandler + ?Sized,
+{
+    fn handle<'a>(
+        &'a self,
+        ctx: SecsContext,
+        message: RuntimeMessage,
+    ) -> BoxSecsRouteFuture<'a> {
+        self.inner.handle(ctx, message)
+    }
+}
+
 impl SecsHandler {
     pub fn new() -> Self {
         Self {
@@ -116,28 +152,35 @@ impl SecsHandler {
         }
     }
 
-    pub fn on<F, Fut>(&mut self, matcher: SecsMatcher, handler: F)
+    pub fn on<F, Fut>(&mut self, matcher: impl Into<SecsMatcher>, handler: F)
     where
-        F: FnMut(SecsContext, RuntimeMessage) -> Fut + 'static,
-        Fut: Future<Output = Result<(), SecsHandlerError>> + 'static,
+        F: Fn(SecsContext, RuntimeMessage) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<(), SecsHandlerError>> + Send + 'static,
     {
         self.on_handler(matcher, handler);
     }
 
-    pub fn on_handler<H>(&mut self, matcher: SecsMatcher, handler: H)
+    pub fn on_handler<H>(&mut self, matcher: impl Into<SecsMatcher>, handler: H)
     where
         H: SecsRouteHandler + 'static,
     {
         self.routes.push(SecsRouteEntry {
-            matcher,
+            matcher: matcher.into(),
             handler: Box::new(handler),
         });
     }
 
+    pub fn on_component<H>(&mut self, matcher: impl Into<SecsMatcher>, handler: Arc<H>)
+    where
+        H: SecsRouteHandler + ?Sized + 'static,
+    {
+        self.on_handler(matcher, ArcSecsRouteHandler::new(handler));
+    }
+
     pub fn action<F, Fut>(&mut self, name: impl Into<String>, action: F)
     where
-        F: FnMut(SecsContext) -> Fut + 'static,
-        Fut: Future<Output = Result<(), SecsHandlerError>> + 'static,
+        F: Fn(SecsContext) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<(), SecsHandlerError>> + Send + 'static,
     {
         self.action_handler(name, action);
     }
@@ -156,7 +199,7 @@ impl SecsHandler {
     ) -> Result<(), SecsHandlerError> {
         let Some(entry) = self
             .routes
-            .iter_mut()
+            .iter()
             .find(|entry| entry.matcher.matches(&message))
         else {
             return Err(SecsHandlerError::RouteNotFound);
@@ -170,7 +213,7 @@ impl SecsHandler {
         ctx: SecsContext,
         name: &str,
     ) -> Result<(), SecsHandlerError> {
-        let Some(action) = self.actions.get_mut(name) else {
+        let Some(action) = self.actions.get(name) else {
             return Err(SecsHandlerError::ActionNotFound);
         };
 
@@ -191,3 +234,35 @@ impl Default for SecsHandler {
         Self::new()
     }
 }
+
+// #[macro_export]
+// macro_rules! secs_handler {
+//     ($route:ident, $handler:ty) => {
+//         $crate::paste::paste! {
+//             pub trait [<$route Handler>]: $crate::SecsRouteHandler + $crate::shaku::Interface {}
+
+//             impl [<$route Handler>] for $handler {}
+//         }
+//     };
+//     ($route:ident => $handler:ty) => {
+//         $crate::secs_handler!($route, $handler);
+//     };
+//     ($visibility:vis $interface:ident => $handler:ty) => {
+//         $visibility trait $interface: $crate::SecsRouteHandler + $crate::shaku::Interface {}
+
+//         impl $interface for $handler {}
+//     };
+// }
+
+// #[macro_export]
+// macro_rules! secs_handle {
+//     ($registry:expr, $module:expr; $($matcher:expr => $interface:path),* $(,)?) => {
+//         $(
+//             {
+//                 let handler: std::sync::Arc<dyn $interface> =
+//                     $crate::shaku::HasComponent::<dyn $interface>::resolve(&$module);
+//                 $registry.on_component($matcher, handler);
+//             }
+//         )*
+//     };
+// }

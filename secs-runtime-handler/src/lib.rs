@@ -1,7 +1,3 @@
-#![cfg_attr(not(test), no_std)]
-
-extern crate alloc;
-
 pub mod context;
 pub mod error;
 pub mod handler;
