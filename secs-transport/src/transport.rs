@@ -6,8 +6,10 @@ pub use secs_common::{
     ConnectionRole, DeviceId, SecsTimeoutUnit, SessionId, SystemByte, TimeoutId, TimeoutTicket,
     TransactionKey, TransactionOwner, TransferContext,
 };
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Rbit(bool);
 
 impl Rbit {
@@ -19,7 +21,8 @@ impl Rbit {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Wbit(bool);
 
 impl Wbit {

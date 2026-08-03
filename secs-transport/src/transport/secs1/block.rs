@@ -1,6 +1,7 @@
 use alloc::vec::Vec;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use secs_ii::{FunctionId, StreamId};
+use serde::{Deserialize, Serialize};
 
 use crate::transport::{DeviceId, Rbit, SystemByte, Wbit, error::SecsTransportError};
 
@@ -15,7 +16,8 @@ const MAX_BLOCK_BODY_LEN: usize = 254;
 /// SECS-I Block Transfer Protocol에서 사용하는 Block.
 ///
 /// Wire format은 `length + header + data + checksum`이다.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct Secs1Block {
     pub header: Secs1BlockHeader,
     pub data: Vec<u8>,
@@ -106,7 +108,8 @@ impl TryFrom<&[u8]> for Secs1Block {
 }
 
 /// SECS-I block header.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct Secs1BlockHeader {
     /// 통신 대상 장치 ID.
     pub device_id: DeviceId,
@@ -184,7 +187,8 @@ impl TryFrom<[u8; HEADER_LEN]> for Secs1BlockHeader {
 }
 
 /// SECS-I Block Transfer Protocol에서 사용하는 handshake code.
-#[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq)]
+#[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum Secs1HandshakeCode {
     /// Request to send.

@@ -6,6 +6,7 @@ use core::convert::TryFrom;
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use secs_ii::{FunctionId, StreamId, item::Secs2Variant};
+use serde::{Deserialize, Serialize};
 
 use crate::transport::error::{HsmsHeaderError, SecsTransportError};
 use crate::transport::{SessionId, SystemByte};
@@ -14,7 +15,8 @@ const WITHOUT_MSB: u8 = 0x7F;
 const MSB_ONLY: u8 = 0x80;
 
 /// HSMS 공통 헤더
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct HsmsHeader {
     pub session_id: SessionId,
     pub byte2: u8,
@@ -142,7 +144,8 @@ impl TryFrom<[u8; 10]> for HsmsHeader {
 }
 
 /// HSMS Message
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub struct HsmsMessage {
     pub header: HsmsHeader,
     pub payload: Option<Secs2Variant>,
@@ -218,7 +221,8 @@ impl TryFrom<&[u8]> for HsmsMessage {
 }
 
 /// HSMS Presentation Type
-#[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum HsmsPType {
     /// SECS-II
@@ -226,7 +230,8 @@ pub enum HsmsPType {
 }
 
 /// HSMS Session Type
-#[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum HsmsSType {
     DataMessage = 0,
@@ -251,7 +256,8 @@ impl HsmsSType {
 }
 
 /// HSMS select 상태 정보
-#[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum HsmsSelectStatus {
     /// select 성공
@@ -265,7 +271,8 @@ pub enum HsmsSelectStatus {
 }
 
 /// HSMS deselect 상태 정보
-#[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum HsmsDeselectStatus {
     /// deselect 성공
@@ -277,7 +284,8 @@ pub enum HsmsDeselectStatus {
 }
 
 /// HSMS reject reason code
-#[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[repr(u8)]
 pub enum HsmsRejectReasonCode {
     NotSupportedSType = 1,
@@ -287,7 +295,8 @@ pub enum HsmsRejectReasonCode {
 }
 
 /// HSMS control message intent
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum HsmsControl {
     SelectReq,
     SelectRsp(HsmsSelectStatus),

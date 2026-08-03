@@ -5,15 +5,18 @@ pub mod convert;
 pub mod protocol;
 
 use secs_ii::{FunctionId, StreamId, item::Secs2Variant};
+use serde::{Deserialize, Serialize};
 
 use crate::transport::{DeviceId, Rbit, SystemByte, Wbit, secs1::block::Secs1BlockHeader};
 
 /// SECS-I 통신 중 사용하는 메시지 모델
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Secs1Message {
     pub header: Secs1MessageHeader,
     pub body: Option<Secs2Variant>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Secs1MessageHeader {
     pub device_id: DeviceId,
     pub rbit: Rbit,

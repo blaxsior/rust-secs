@@ -12,3 +12,4 @@ secs-runtime-core.workspace = true
 secs-ii.workspace = true
 thiserror.workspace = true
 log.workspace = true
+serde.workspace = true

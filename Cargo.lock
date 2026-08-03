@@ -535,6 +535,9 @@ checksum = "c62751faa8bc286982334a082fe125184a29fc89d17775766e4f891b7d726980"
 [[package]]
 name = "secs-common"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "secs-ii"
@@ -625,6 +628,7 @@ dependencies = [
  "secs-common",
  "secs-ii",
  "secs-runtime-core",
+ "serde",
  "thiserror",
 ]
 

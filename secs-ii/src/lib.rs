@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 
 use crate::item::Secs2Variant;
+use serde::{Deserialize, Serialize};
 
 extern crate alloc;
 
@@ -9,11 +10,13 @@ pub mod error;
 pub mod item;
 
 /// SECS-II Stream Id
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct StreamId(pub u8);
 
 /// SECS-II Function Id
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct FunctionId(pub u8);
 impl FunctionId {
     pub fn is_primary(&self) -> bool {
@@ -30,6 +33,7 @@ impl FunctionId {
 }
 
 /// Secs-ii Message 통신 시 사용하는 기본 메시지를 정의한다.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Secs2Message {
     /// SECS-II stream
     pub stream: StreamId,
