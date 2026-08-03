@@ -1,5 +1,5 @@
-use alloc::{boxed::Box, rc::Rc};
-use core::cell::RefCell;
+use alloc::boxed::Box;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use secs_runtime_core::{
     MessageTransport, RuntimeMessage, SecsTimeoutUnit, SecsTimer, SystemByteSource,
@@ -11,34 +11,27 @@ use crate::{
     timer::TimeoutConfig,
 };
 
-pub struct SecsRuntime<R>
+pub struct SecsRuntime<R, T = Box<dyn MessageTransport>>
 where
     R: SecsTimer,
+    T: MessageTransport,
 {
     // Owns the SECS transport state machine and completed message queues.
-    transport: Box<dyn MessageTransport>,
+    transport: T,
     // Timer backend is injected so std/no_std runtimes can provide their own clock.
     timer: R,
     timeout_config: TimeoutConfig<R::Duration>,
     // Handles share this state to enqueue sends and register recv waiters.
-    shared: Rc<RefCell<RuntimeShared>>,
+    shared: Arc<Mutex<RuntimeShared>>,
 }
 
-impl<R> SecsRuntime<R>
+impl<R, T> SecsRuntime<R, T>
 where
     R: SecsTimer,
+    T: MessageTransport,
 {
     pub fn new(
-        transport: impl MessageTransport + 'static,
-        timer: R,
-        system_bytes: SystemByteSource,
-        timeout_config: TimeoutConfig<R::Duration>,
-    ) -> Self {
-        Self::with_boxed_transport(Box::new(transport), timer, system_bytes, timeout_config)
-    }
-
-    pub fn with_boxed_transport(
-        transport: Box<dyn MessageTransport>,
+        transport: T,
         timer: R,
         system_bytes: SystemByteSource,
         timeout_config: TimeoutConfig<R::Duration>,
@@ -47,7 +40,7 @@ where
             transport,
             timer,
             timeout_config,
-            shared: Rc::new(RefCell::new(RuntimeShared::new(system_bytes))),
+            shared: Arc::new(Mutex::new(RuntimeShared::new(system_bytes))),
         }
     }
 
@@ -106,14 +99,14 @@ where
 
         // Pending calls consume matching secondary replies. If no recv waiter exists, the caller
         // intentionally ignored the response, so the pending slot is simply cleared.
-        if let Some(pending) = self.shared.borrow_mut().pending_calls.remove(&key) {
+        let mut shared = self.shared();
+        if let Some(pending) = shared.pending_calls.remove(&key) {
             if let Some(resolver) = pending.resolver {
-                resolver.resolve(message.into_payload());
+                resolver.resolve(message.payload);
             }
-            return;
+        } else {
+            shared.push_incomming(message);
         }
-
-        self.shared.borrow_mut().push_incomming(message);
     }
 
     fn complete_expired_timeout_calls(&mut self) {
@@ -122,14 +115,14 @@ where
 
             match timeout {
                 SecsTimeoutUnit::T3(key) => {
-                    if let Some(pending) = self.shared.borrow_mut().pending_calls.remove(&key)
+                    if let Some(pending) = self.shared().pending_calls.remove(&key)
                         && let Some(resolver) = pending.resolver
                     {
                         resolver.reject(CallError::Timeout);
                     }
                 }
                 SecsTimeoutUnit::T6 | SecsTimeoutUnit::T7 | SecsTimeoutUnit::T8 => {
-                    let mut shared = self.shared.borrow_mut();
+                    let mut shared = self.shared();
                     let pending_calls = core::mem::take(&mut shared.pending_calls);
                     for (_, pending) in pending_calls {
                         if let Some(resolver) = pending.resolver {
@@ -144,7 +137,7 @@ where
 
     fn process_commands(&mut self) -> Result<(), SecsRuntimeError<R::Error>> {
         loop {
-            let command = { self.shared.borrow_mut().commands.pop_front() };
+            let command = { self.shared().commands.pop_front() };
             let Some(command) = command else {
                 return Ok(());
             };
@@ -157,7 +150,7 @@ where
                         // letting the transaction wait for a later timeout.
                         if let Some(key) = call {
                             if let Some(pending) =
-                                self.shared.borrow_mut().pending_calls.remove(&key)
+                                self.shared().pending_calls.remove(&key)
                                 && let Some(resolver) = pending.resolver
                             {
                                 resolver.reject(CallError::Transport(error));
@@ -168,5 +161,25 @@ where
                 }
             }
         }
+    }
+
+    fn shared(&self) -> MutexGuard<'_, RuntimeShared> {
+        self.shared
+            .lock()
+            .expect("runtime shared state mutex poisoned")
+    }
+}
+
+impl<R> SecsRuntime<R, Box<dyn MessageTransport>>
+where
+    R: SecsTimer,
+{
+    pub fn with_boxed_transport(
+        transport: Box<dyn MessageTransport>,
+        timer: R,
+        system_bytes: SystemByteSource,
+        timeout_config: TimeoutConfig<R::Duration>,
+    ) -> Self {
+        Self::new(transport, timer, system_bytes, timeout_config)
     }
 }

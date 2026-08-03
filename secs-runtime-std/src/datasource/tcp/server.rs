@@ -45,7 +45,7 @@ impl<A> TcpServerDataSource<A> {
 
 impl<A> ByteDataSource for TcpServerDataSource<A>
 where
-    A: ToSocketAddrs,
+    A: ToSocketAddrs + Send,
 {
     fn open(&mut self) -> Result<(), ByteDataSourceError> {
         if self.is_open() {

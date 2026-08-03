@@ -67,7 +67,17 @@ pub trait ByteDataSource {
 
     fn is_open(&self) -> bool;
 
+    /// Reads bytes without blocking the runtime tick indefinitely.
+    ///
+    /// Implementations should prefer non-blocking I/O and return `WouldBlock` when no data is
+    /// currently available. If the underlying API only supports blocking I/O, it must use a short
+    /// timeout and return `TimedOut` instead of waiting forever.
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, ByteDataSourceError>;
 
+    /// Writes bytes without blocking the runtime tick indefinitely.
+    ///
+    /// Implementations should prefer non-blocking I/O and return `WouldBlock` when the output side
+    /// is temporarily unavailable. If the underlying API only supports blocking I/O, it must use a
+    /// short timeout and return `TimedOut` instead of waiting forever.
     fn write(&mut self, bytes: &[u8]) -> Result<(), ByteDataSourceError>;
 }

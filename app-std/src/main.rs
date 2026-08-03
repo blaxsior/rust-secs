@@ -6,7 +6,6 @@ use secs_common::{ConnectionRole, SystemByteSource};
 use secs_ii::item::Secs2Variant;
 use secs_ii::{FunctionId, Secs2Message, StreamId};
 use secs_runtime::{SecsHandle, SecsRuntime, TimeoutConfig};
-use secs_runtime_core::TaskQueue;
 use secs_runtime_std::{StdSecsTimer, TcpServerDataSource};
 use secs_transport::transport::SessionId;
 use secs_transport::transport::hsms::config::HsmsTransportConfig;
@@ -119,7 +118,6 @@ fn main() {
     let source = TcpServerDataSource::new(local_addr);
     let transport = HsmsTransport::new(&config, Box::new(source), SystemByteSource::new());
     let timer = StdSecsTimer::new();
-    let mut task_pool = TaskQueue::new();
     let mut runtime = SecsRuntime::new(
         transport,
         timer,
@@ -127,12 +125,6 @@ fn main() {
         timeout_config(&config),
     );
     let handle = runtime.handle();
-    task_pool
-        .spawn(process_incoming(handle.clone()))
-        .expect("failed to spawn incoming task");
-    // task_pool
-    //     .spawn(request_establish_communication(handle.clone()))
-    //     .expect("failed to spawn request flow");
 
     log::debug!("starting HSMS active transport: {}", local_addr);
     if let Err(error) = runtime.start() {
@@ -140,22 +132,36 @@ fn main() {
         return;
     }
 
-    loop {
-        if let Err(error) = runtime.tick() {
-            log::error!("runtime tick failed: {:?}", error);
-            if matches!(
-                error,
-                secs_runtime::SecsRuntimeError::Transport(
-                    secs_runtime_core::MachineError::DataSourceError(
-                        secs_runtime_core::ByteDataSourceError::NotOpen
+    let runtime_thread = thread::spawn(move || {
+        loop {
+            if let Err(error) = runtime.tick() {
+                log::error!("runtime tick failed: {:?}", error);
+                if matches!(
+                    error,
+                    secs_runtime::SecsRuntimeError::Transport(
+                        secs_runtime_core::MachineError::DataSourceError(
+                            secs_runtime_core::ByteDataSourceError::NotOpen
+                        )
                     )
-                )
-            ) {
-                thread::sleep(Duration::from_millis(200));
+                ) {
+                    thread::sleep(Duration::from_millis(200));
+                }
             }
-        }
-        let _ = task_pool.run_until_stalled();
 
-        thread::sleep(Duration::from_millis(10));
-    }
+            thread::sleep(Duration::from_millis(10));
+        }
+    });
+
+    let incoming_handle = handle.clone();
+    let _incoming_thread = thread::spawn(move || {
+        futures::executor::block_on(process_incoming(incoming_handle));
+    });
+
+    let request_handle = handle.clone();
+    let _request_thread = thread::spawn(move || {
+        thread::sleep(Duration::from_secs(20));
+        futures::executor::block_on(request_establish_communication(request_handle));
+    });
+
+    let _ = runtime_thread.join();
 }

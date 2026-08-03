@@ -1,4 +1,7 @@
-use std::{cell::RefCell, convert::Infallible, rc::Rc};
+use std::{
+    convert::Infallible,
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 use secs_runtime::{SecsHandle, SecsRuntime, SecsRuntimeError, TimeoutConfig};
 use secs_runtime_core::SystemByteSource;
@@ -6,12 +9,12 @@ use secs_transport::transport::hsms::{config::HsmsTransportConfig, protocol::Hsm
 
 use crate::{WebDataSource, WebDataSourceHandle, WebSecsTimer};
 
-type InnerRuntime = SecsRuntime<WebSecsTimer>;
+type InnerRuntime = SecsRuntime<WebSecsTimer, HsmsTransport>;
 
 pub type WebRuntimeError = SecsRuntimeError<Infallible>;
 
 pub struct WebRuntime {
-    inner: Rc<RefCell<InnerRuntime>>,
+    inner: Arc<Mutex<InnerRuntime>>,
     data_source_handle: WebDataSourceHandle,
 }
 
@@ -25,7 +28,7 @@ impl WebRuntime {
         );
 
         Self {
-            inner: Rc::new(RefCell::new(SecsRuntime::new(
+            inner: Arc::new(Mutex::new(SecsRuntime::new(
                 transport,
                 WebSecsTimer::new(),
                 SystemByteSource::with_range(1024, 1024, u32::MAX),
@@ -36,7 +39,7 @@ impl WebRuntime {
     }
 
     pub fn start(&mut self) -> Result<(), WebRuntimeError> {
-        self.inner.borrow_mut().start()
+        self.inner().start()
     }
 
     pub fn tick(&mut self) -> Result<(), WebRuntimeError> {
@@ -44,7 +47,7 @@ impl WebRuntime {
     }
 
     pub fn handle(&self) -> SecsHandle {
-        self.inner.borrow().handle()
+        self.inner().handle()
     }
 
     pub fn data_source_handle(&self) -> WebDataSourceHandle {
@@ -52,13 +55,12 @@ impl WebRuntime {
     }
 
     fn tick_inner(&mut self) -> Result<(), WebRuntimeError> {
-        tick_runtime(&self.inner)
+        self.inner().tick()
     }
-}
 
-fn tick_runtime(runtime: &Rc<RefCell<InnerRuntime>>) -> Result<(), WebRuntimeError> {
-    let mut runtime = runtime.borrow_mut();
-    runtime.tick()
+    fn inner(&self) -> MutexGuard<'_, InnerRuntime> {
+        self.inner.lock().expect("web runtime mutex poisoned")
+    }
 }
 
 pub fn hsms_timeout_config(config: &HsmsTransportConfig) -> TimeoutConfig<f64> {

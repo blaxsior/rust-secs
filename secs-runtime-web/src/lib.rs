@@ -8,12 +8,10 @@ pub mod bind;
 pub mod datasource;
 pub mod logger;
 pub mod runtime;
-pub mod task;
 pub mod timer;
 
 pub use datasource::{WebDataSource, WebDataSourceHandle};
 pub use logger::{WebLogger, init_logger, init_logger_with_callback, set_log_callback};
 pub use runtime::{WebRuntime, WebRuntimeError, hsms_timeout_config};
-pub use task::WebTaskRunner;
 pub use timer::WebSecsTimer;
 pub use wasm_bindgen;

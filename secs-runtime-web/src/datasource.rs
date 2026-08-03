@@ -1,4 +1,7 @@
-use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 use js_sys::{Function, Uint8Array};
 use secs_runtime_core::{ByteDataSource, ByteDataSourceError};
@@ -13,49 +16,55 @@ struct WebDataSourceState {
 
 #[derive(Clone)]
 pub struct WebDataSourceHandle {
-    state: Rc<RefCell<WebDataSourceState>>,
+    state: Arc<Mutex<WebDataSourceState>>,
 }
 
 impl WebDataSourceHandle {
     pub fn open(&self) {
-        let mut state = self.state.borrow_mut();
+        let mut state = self.state();
         state.is_open = true;
         state.has_error = false;
     }
 
     pub fn close(&self) {
-        let mut state = self.state.borrow_mut();
+        let mut state = self.state();
         state.is_open = false;
         state.incoming.clear();
     }
 
     pub fn fail(&self) {
-        self.state.borrow_mut().has_error = true;
+        self.state().has_error = true;
     }
 
     pub fn is_open(&self) -> bool {
-        self.state.borrow().is_open
+        self.state().is_open
     }
 
     pub fn has_error(&self) -> bool {
-        self.state.borrow().has_error
+        self.state().has_error
     }
 
     pub fn pending_read_len(&self) -> usize {
-        self.state.borrow().incoming.len()
+        self.state().incoming.len()
     }
 
     pub fn push_read_bytes(&self, bytes: &[u8]) {
-        self.state.borrow_mut().incoming.extend(bytes);
+        self.state().incoming.extend(bytes);
     }
 
     pub fn push_read_u8_array(&self, bytes: Uint8Array) {
         self.push_read_bytes(&bytes.to_vec());
     }
+
+    fn state(&self) -> MutexGuard<'_, WebDataSourceState> {
+        self.state
+            .lock()
+            .expect("web datasource state mutex poisoned")
+    }
 }
 
 pub struct WebDataSource {
-    state: Rc<RefCell<WebDataSourceState>>,
+    state: Arc<Mutex<WebDataSourceState>>,
     on_open: Option<Function>,
     on_close: Option<Function>,
     on_read_request: Option<Function>,
@@ -65,7 +74,7 @@ pub struct WebDataSource {
 impl WebDataSource {
     pub fn new(on_write: Function) -> Self {
         Self {
-            state: Rc::new(RefCell::new(WebDataSourceState::default())),
+            state: Arc::new(Mutex::new(WebDataSourceState::default())),
             on_open: None,
             on_close: None,
             on_read_request: None,
@@ -80,7 +89,7 @@ impl WebDataSource {
         on_read_request: Option<Function>,
     ) -> Self {
         Self {
-            state: Rc::new(RefCell::new(WebDataSourceState::default())),
+            state: Arc::new(Mutex::new(WebDataSourceState::default())),
             on_open,
             on_close,
             on_read_request,
@@ -113,22 +122,22 @@ impl ByteDataSource for WebDataSource {
 
     fn close(&mut self) -> Result<(), ByteDataSourceError> {
         Self::call_optional(&self.on_close).map_err(|_| ByteDataSourceError::CloseFailed)?;
-        self.state.borrow_mut().is_open = false;
+        self.state().is_open = false;
         Ok(())
     }
 
     fn is_open(&self) -> bool {
-        self.state.borrow().is_open
+        self.state().is_open
     }
 
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, ByteDataSourceError> {
-        if self.state.borrow().has_error {
+        if self.state().has_error {
             return Err(ByteDataSourceError::ReadFailed);
         }
 
         Self::call_optional(&self.on_read_request).map_err(|_| ByteDataSourceError::ReadFailed)?;
 
-        let mut state = self.state.borrow_mut();
+        let mut state = self.state();
         if !state.is_open {
             return Err(ByteDataSourceError::WouldBlock);
         }
@@ -142,7 +151,7 @@ impl ByteDataSource for WebDataSource {
     }
 
     fn write(&mut self, bytes: &[u8]) -> Result<(), ByteDataSourceError> {
-        if !self.state.borrow().is_open {
+        if !self.state().is_open {
             return Err(ByteDataSourceError::WouldBlock);
         }
 
@@ -151,5 +160,13 @@ impl ByteDataSource for WebDataSource {
             .call1(&JsValue::NULL, bytes.as_ref())
             .map(|_| ())
             .map_err(|_| ByteDataSourceError::WriteFailed)
+    }
+}
+
+impl WebDataSource {
+    fn state(&self) -> MutexGuard<'_, WebDataSourceState> {
+        self.state
+            .lock()
+            .expect("web datasource state mutex poisoned")
     }
 }

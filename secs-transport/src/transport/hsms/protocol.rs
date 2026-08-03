@@ -32,7 +32,7 @@ pub mod session;
 pub struct HsmsTransport {
     session: HsmsSession,
     machine: HsmsMessageMachine,
-    data_source: Box<dyn ByteDataSource>,
+    data_source: Box<dyn ByteDataSource + Send>,
 
     pending_messages: VecDeque<HsmsMessage>,
     pending_writes: VecDeque<HsmsWrite>,
@@ -47,7 +47,7 @@ pub struct HsmsTransport {
 impl HsmsTransport {
     pub fn new(
         config: &HsmsTransportConfig,
-        data_source: Box<dyn ByteDataSource>,
+        data_source: Box<dyn ByteDataSource + Send>,
         sb_source: SystemByteSource,
     ) -> Self {
         Self {

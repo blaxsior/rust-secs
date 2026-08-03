@@ -1,8 +1,7 @@
 use alloc::{
     collections::{BTreeMap, VecDeque},
-    rc::Rc,
 };
-use core::cell::RefCell;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use secs_ii::Secs2Message;
 use secs_runtime_core::{
@@ -11,6 +10,8 @@ use secs_runtime_core::{
 };
 
 use crate::error::CallError;
+
+type SharedRuntime = Arc<Mutex<RuntimeShared>>;
 
 pub(crate) enum RuntimeCommand {
     Send {
@@ -120,20 +121,20 @@ impl RuntimeShared {
 
 #[derive(Clone)]
 pub struct SecsHandle {
-    shared: Rc<RefCell<RuntimeShared>>,
+    shared: SharedRuntime,
 }
 
 impl SecsHandle {
-    pub(crate) fn new(shared: Rc<RefCell<RuntimeShared>>) -> Self {
+    pub(crate) fn new(shared: SharedRuntime) -> Self {
         Self { shared }
     }
 
     pub fn send(&self, message: Secs2Message) -> Option<TransactionKey> {
-        self.shared.borrow_mut().send(message)
+        self.shared().send(message)
     }
 
     pub fn send_with_key(&self, request_key: TransactionKey, message: Secs2Message) {
-        self.shared.borrow_mut().send_with_key(request_key, message);
+        self.shared().send_with_key(request_key, message);
     }
 
     pub fn reply(&self, key: TransactionKey, message: Secs2Message) {
@@ -141,15 +142,15 @@ impl SecsHandle {
     }
 
     pub fn request(&self, message: Secs2Message) -> RecvFuture {
-        self.shared.borrow_mut().request(message)
+        self.shared().request(message)
     }
 
     pub fn recv(&self) -> InboundFuture {
-        self.shared.borrow_mut().recv()
+        self.shared().recv()
     }
 
     pub fn recv_call(&self, key: TransactionKey) -> RecvFuture {
-        let mut shared = self.shared.borrow_mut();
+        let mut shared = self.shared();
         let (resolver, future) = promise();
 
         let Some(pending) = shared.pending_calls.get_mut(&key) else {
@@ -164,6 +165,12 @@ impl SecsHandle {
         }
 
         future
+    }
+
+    fn shared(&self) -> MutexGuard<'_, RuntimeShared> {
+        self.shared
+            .lock()
+            .expect("runtime shared state mutex poisoned")
     }
 }
 

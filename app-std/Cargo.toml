@@ -11,5 +11,5 @@ secs-runtime-core.workspace = true
 secs-runtime-std.workspace = true
 secs-transport.workspace = true
 env_logger.workspace = true
+futures.workspace = true
 log.workspace = true
-
