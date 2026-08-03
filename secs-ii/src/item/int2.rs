@@ -3,10 +3,12 @@ use crate::{
     item::{Secs2Item, Secs2Variant},
 };
 use alloc::vec::Vec;
+use serde::{Deserialize, Serialize};
 
 pub type Secs2Int2Item = Vec<i16>;
 static SECS2_INT2_SIZE: usize = 2;
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Secs2Int2 {
     item: Secs2Int2Item,
 }

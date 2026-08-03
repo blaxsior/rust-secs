@@ -4,11 +4,13 @@ use crate::{
 };
 
 use alloc::vec::Vec;
+use serde::{Deserialize, Serialize};
 
 pub type Secs2BooleanItem = Vec<u8>;
 pub type Secs2BooleanItem2 = Vec<bool>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Secs2Boolean {
     item: Secs2BooleanItem,
 }

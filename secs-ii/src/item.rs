@@ -45,7 +45,8 @@ use crate::{
 ///
 /// Secs-II 타입 객체를 표현하는 enum 클래스
 ///
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "format", content = "value", rename_all = "lowercase")]
 pub enum Secs2Variant {
     List(Secs2List),
     Binary(Secs2Binary),

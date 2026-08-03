@@ -3,11 +3,13 @@ use crate::{
     item::{Secs2Item, Secs2Variant},
 };
 use alloc::vec::Vec;
+use serde::{Deserialize, Serialize};
 
 pub type Secs2Uint1Item = Vec<u8>;
 
 // static SECS2_UINT1_SIZE: usize = 1;
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Secs2Uint1 {
     item: Secs2Uint1Item,
 }

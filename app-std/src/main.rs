@@ -7,7 +7,7 @@ use secs_ii::item::Secs2Variant;
 use secs_ii::{FunctionId, Secs2Message, StreamId};
 use secs_model::{ValueData, ValueDictionary, ValueId, ValueSpec};
 use secs_runtime::{SecsHandle, SecsRuntime, TimeoutConfig};
-use secs_runtime_std::model::{JsonCodec, ValueDataFileRepository, ValueSpecFileRepository};
+use secs_runtime_std::model::{JsonCodec, ValueDataFileRepository, ValueSpecFileRepository, YamlCodec};
 use secs_runtime_std::{FileDataStore, StdSecsTimer, TcpServerDataSource};
 use secs_transport::transport::SessionId;
 use secs_transport::transport::hsms::config::HsmsTransportConfig;
@@ -70,8 +70,8 @@ fn build_s1f13_request() -> Secs2Message {
 
 fn init_values() {
     let spec_store = match FileDataStore::<_, ValueSpec>::new(
-        "app-std/config/value-spec.json",
-        JsonCodec,
+        "app-std/config/value-spec.yml",
+        YamlCodec,
     ) {
         Ok(store) => store,
         Err(error) => {
@@ -80,8 +80,8 @@ fn init_values() {
         }
     };
     let data_store = match FileDataStore::<_, ValueData>::new(
-        "app-std/data/value-data.json",
-        JsonCodec,
+        "app-std/data/value-data.yml",
+        YamlCodec,
     ) {
         Ok(store) => store,
         Err(error) => {

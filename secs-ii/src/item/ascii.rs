@@ -4,9 +4,11 @@ use crate::{
 };
 use alloc::string::String;
 use alloc::vec::Vec;
+use serde::{Deserialize, Serialize};
 
 pub type Secs2ASCIIItem = String;
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Secs2ASCII {
     item: Secs2ASCIIItem,
 }

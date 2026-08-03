@@ -1,6 +1,10 @@
 MLDN:
   id: MLDN
-  encoded: 410b544553544d4f44454c4e4f
+  value:
+    format: ascii
+    value: TESTMODELNO
 SOFTREV:
   id: SOFTREV
-  encoded: 4105302e312e30
+  value:
+    format: ascii
+    value: 0.1.0
