@@ -1,17 +1,25 @@
 "use client";
 
 import { useEffect } from "react";
-import { initWasm } from "@/lib/wasm";
-import { init_web_logger } from "@/wasm/secs-runtime-web";
+import { initWasm, initWebLogger } from "@/lib/wasm";
+import { useWebLogStore } from "@/stores/weblog/useWebLogStore";
 
 export function WasmLoader() {
-  useEffect(() => {
-    initWasm().catch((error) => {
-      console.error("failed to load wasm", error);
-    });
-    init_web_logger("debug", () => {
+  const addLog = useWebLogStore(it => it.add);
 
-    });
+  useEffect(() => {
+    initWasm()
+      .then((_) => {
+        console.info("success to load wasm");
+        // logger 초기화
+        initWebLogger("debug", (level, msg) => {
+          addLog({ level, msg });
+        });
+      })
+      .catch((error) => {
+        console.error("failed to load wasm", error);
+      });
+
   }, []);
 
   return null;
