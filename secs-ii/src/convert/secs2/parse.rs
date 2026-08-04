@@ -21,61 +21,104 @@ where
 fn parse_impl(reader: &mut &[u8]) -> Result<Secs2Variant, String> {
     // 1. header 첫번째 라인 획득 (read_u8 대체)
     if reader.is_empty() {
-        return Err("Unexpected EOF when reading header".into());
+        let err = String::from("Unexpected EOF when reading header");
+        log::error!("secs2 parse failed: {err}");
+        return Err(err);
     }
     let (head, tail) = reader.split_at(1);
     *reader = tail;
     let header_byte = head[0];
 
     // header 분석
-    let format_code = get_format_code(header_byte)?;
-    let length_bytes_no = get_length_bytes_number(header_byte)?;
+    let format_code = match get_format_code(header_byte) {
+        Ok(format_code) => format_code,
+        Err(err) => {
+            log::error!("secs2 parse failed: header={header_byte:#04x}, error={err}");
+            return Err(err);
+        }
+    };
+    let length_bytes_no = match get_length_bytes_number(header_byte) {
+        Ok(length_bytes_no) => length_bytes_no,
+        Err(err) => {
+            log::error!(
+                "secs2 parse failed: format={format_code:?}, header={header_byte:#04x}, error={err}"
+            );
+            return Err(err);
+        }
+    };
 
-    // 내부 헬퍼 함수도 reader: &mut &[u8]을 받도록 수정되어야 합니다.
-    let item_length_bytes = read_item_length_bytes(reader, length_bytes_no)?;
+    let item_length_bytes = match read_item_length_bytes(reader, length_bytes_no) {
+        Ok(item_length_bytes) => item_length_bytes,
+        Err(err) => {
+            log::error!(
+                "secs2 parse failed: format={format_code:?}, length_bytes={length_bytes_no}, error={err}"
+            );
+            return Err(err);
+        }
+    };
     let item_length = get_item_length(&item_length_bytes);
+    log::debug!(
+        "secs2 parse item: format={format_code:?}, length={item_length}, length_bytes={length_bytes_no}, remaining={}",
+        reader.len()
+    );
 
     // list 인 경우 자식으로 처리
     if let Secs2FormatCode::List = format_code {
         let mut items: Vec<Secs2Variant> = Vec::with_capacity(item_length);
-        for _ in 1..=item_length {
+        for _ in 0..item_length {
             items.push(parse_impl(reader)?); // 가변 reader 전파
         }
 
+        log::debug!("secs2 parse list completed: items={item_length}");
         Ok(Secs2List::new(items).as_enum())
     } else {
         // 2. 아닌 경우 byte 데이터를 읽어 대상 아이템 생성 (read_exact 대체)
         if reader.len() < item_length {
-            return Err(format!(
+            let err = format!(
                 "Unexpected EOF: expected {} bytes, but got {}",
                 item_length,
                 reader.len()
-            ));
+            );
+            log::error!("secs2 parse item failed: format={format_code:?}, error={err}");
+            return Err(err);
         }
         let (buf, tail) = reader.split_at(item_length);
         *reader = tail; // 읽은 만큼 포인터 전진
 
-        let item: Secs2Variant = match format_code {
+        let item: Result<Secs2Variant, String> = match format_code {
             Secs2FormatCode::List => panic!("unreachable code"),
-            // 이제 buf 자체가 &[u8] 슬라이스이므로 .as_slice() 없이 바로 주입 가능합니다.
-            Secs2FormatCode::ASCII => Secs2ASCII::try_from(buf)?.as_enum(),
-            Secs2FormatCode::Binary => Secs2Binary::try_from(buf)?.as_enum(),
-            Secs2FormatCode::Boolean => Secs2Boolean::try_from(buf)?.as_enum(),
-            Secs2FormatCode::UInt8 => Secs2Uint8::try_from(buf)?.as_enum(),
-            Secs2FormatCode::UInt1 => Secs2Uint1::try_from(buf)?.as_enum(),
-            Secs2FormatCode::UInt2 => Secs2Uint2::try_from(buf)?.as_enum(),
-            Secs2FormatCode::UInt4 => Secs2Uint4::try_from(buf)?.as_enum(),
-            Secs2FormatCode::Float8 => Secs2Float8::try_from(buf)?.as_enum(),
-            Secs2FormatCode::Float4 => Secs2Float4::try_from(buf)?.as_enum(),
-            Secs2FormatCode::Int8 => Secs2Int8::try_from(buf)?.as_enum(),
-            Secs2FormatCode::Int1 => Secs2Int1::try_from(buf)?.as_enum(),
-            Secs2FormatCode::Int2 => Secs2Int2::try_from(buf)?.as_enum(),
-            Secs2FormatCode::Int4 => Secs2Int4::try_from(buf)?.as_enum(),
+            Secs2FormatCode::ASCII => Secs2ASCII::try_from(buf).map(|item| item.as_enum()).map_err(String::from),
+            Secs2FormatCode::Binary => Secs2Binary::try_from(buf).map(|item| item.as_enum()).map_err(String::from),
+            Secs2FormatCode::Boolean => Secs2Boolean::try_from(buf).map(|item| item.as_enum()).map_err(String::from),
+            Secs2FormatCode::UInt8 => Secs2Uint8::try_from(buf).map(|item| item.as_enum()).map_err(String::from),
+            Secs2FormatCode::UInt1 => Secs2Uint1::try_from(buf).map(|item| item.as_enum()).map_err(String::from),
+            Secs2FormatCode::UInt2 => Secs2Uint2::try_from(buf).map(|item| item.as_enum()).map_err(String::from),
+            Secs2FormatCode::UInt4 => Secs2Uint4::try_from(buf).map(|item| item.as_enum()).map_err(String::from),
+            Secs2FormatCode::Float8 => Secs2Float8::try_from(buf).map(|item| item.as_enum()).map_err(String::from),
+            Secs2FormatCode::Float4 => Secs2Float4::try_from(buf).map(|item| item.as_enum()).map_err(String::from),
+            Secs2FormatCode::Int8 => Secs2Int8::try_from(buf).map(|item| item.as_enum()).map_err(String::from),
+            Secs2FormatCode::Int1 => Secs2Int1::try_from(buf).map(|item| item.as_enum()).map_err(String::from),
+            Secs2FormatCode::Int2 => Secs2Int2::try_from(buf).map(|item| item.as_enum()).map_err(String::from),
+            Secs2FormatCode::Int4 => Secs2Int4::try_from(buf).map(|item| item.as_enum()).map_err(String::from),
             Secs2FormatCode::Jis8 | Secs2FormatCode::Char => {
-                return Err("not implemented type".into());
+                Err(String::from("not implemented type"))
             }
         };
-        Ok(item)
+
+        match item {
+            Ok(item) => {
+                log::debug!(
+                    "secs2 parse scalar completed: format={format_code:?}, length={item_length}"
+                );
+                Ok(item)
+            }
+            Err(err) => {
+                log::error!(
+                    "secs2 parse scalar failed: format={format_code:?}, length={item_length}, error={err}"
+                );
+                Err(err)
+            }
+        }
     }
 }
 /// 1-byte 데이터의 상위 6비트에서 Item type 획득
@@ -259,13 +302,12 @@ mod tests {
     mod read_item_length_bytes_test {
         use super::*;
 
-        // 💡 이제 std::io::Cursor 임포트가 필요 없습니다.
 
         #[test]
         fn should_return_err_if_length_number_smaller_than_1() {
             let err_num = 0;
             let buf = [0u8; 2];
-            let mut stream = &buf[..]; // Cursor::new(&buf) 대신 슬라이스로 만듭니다.
+            let mut stream = &buf[..]; 
 
             let result = read_item_length_bytes(&mut stream, err_num);
             let msg = result.expect_err("must err if num out of range [1,3]");
@@ -293,7 +335,6 @@ mod tests {
             let result = read_item_length_bytes(&mut stream, len_number);
             let msg = result.expect_err("buffer size is not enough. but enough");
 
-            // 💡 수정된 함수의 에러 메시지 형식에 맞춰 "Unexpected EOF"로 검증합니다.
             assert!(msg.contains("Unexpected EOF"));
         }
 
@@ -311,7 +352,6 @@ mod tests {
                 assert_eq!(buf[i], length_bytes[i]);
             }
 
-            // 💡 덤으로 stream이 완전히 소비되어 빈 슬라이스가 되었는지 검증도 가능해집니다.
             assert!(stream.is_empty());
         }
     }

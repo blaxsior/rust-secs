@@ -26,11 +26,26 @@ pub fn serialize_to(buffer: &mut Vec<u8>, data: &Secs2Variant) -> Result<(), Sec
 /// Secs2Variant 객체의 byte 변환에 대한 구현체
 ///
 fn serialize_impl(buffer: &mut Vec<u8>, data: &Secs2Variant) -> Result<(), Secs2Error> {
-    let item_length = data.value()?.length();
     let format_code = data.format_code();
+    let item_length = match data.value() {
+        Ok(value) => value.length(),
+        Err(err) => {
+            log::error!("secs2 serialize item failed: format={format_code:?}, error={err:?}");
+            return Err(err);
+        }
+    };
+    log::debug!("secs2 serialize item: format={format_code:?}, length={item_length}");
 
     // header 데이터 쓰기
-    let (length_bytes, length_len) = encode_length(item_length)?;
+    let (length_bytes, length_len) = match encode_length(item_length) {
+        Ok(encoded) => encoded,
+        Err(err) => {
+            log::error!(
+                "secs2 serialize length failed: format={format_code:?}, length={item_length}, error={err:?}"
+            );
+            return Err(err);
+        }
+    };
     let valid_length_slice = &length_bytes[..length_len];
 
     let header_byte: u8 = (u8::from(format_code) << 2) | (length_len as u8);
@@ -42,12 +57,16 @@ fn serialize_impl(buffer: &mut Vec<u8>, data: &Secs2Variant) -> Result<(), Secs2
 
     if let Secs2Variant::List(item_list) = data {
         // secs2 list 타입인 경우 재귀 처리
-        for item in item_list.items() {
-            serialize_impl(buffer, item)?;
+        for (index, item) in item_list.items().iter().enumerate() {
+            if let Err(err) = serialize_impl(buffer, item) {
+                log::error!("secs2 serialize list item failed: index={index}, error={err:?}");
+                return Err(err);
+            }
         }
     } else {
         // list 이외의 케이스 처리
-        match data {
+        let result = (|| -> Result<(), Secs2Error> {
+            match data {
             Secs2Variant::List(_) => panic!("unreachable code"),
             Secs2Variant::Binary(v) => v.encode(buffer)?,
             Secs2Variant::Boolean(v) => v.encode(buffer)?,
@@ -65,9 +84,20 @@ fn serialize_impl(buffer: &mut Vec<u8>, data: &Secs2Variant) -> Result<(), Secs2
             Secs2Variant::Jis8 | Secs2Variant::Char => {
                 return Err(Secs2Error::Unimplemented);
             }
-        };
+            };
+
+            Ok(())
+        })();
+
+        if let Err(err) = result {
+            log::error!(
+                "secs2 serialize scalar failed: format={format_code:?}, length={item_length}, error={err:?}"
+            );
+            return Err(err);
+        }
     };
 
+    log::debug!("secs2 serialize item completed: format={format_code:?}, length={item_length}");
     Ok(())
 }
 
