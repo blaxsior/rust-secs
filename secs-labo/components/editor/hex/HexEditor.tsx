@@ -8,16 +8,40 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 
 type HexEditorProps = {
-  charPerItem: number;
+  /**
+   * editor이 readonly인지?
+   */
+  readonly?: boolean;
+  /**
+   * 슬롯 당 문자 개수 ex) hex = 2
+   */
+  charPerSlot: number;
+  /**
+   * 1줄 당 보여줄 슬롯 개수
+   */
+  slotPerLine?: number;
+  /**
+ * 슬롯에 부여할 이름
+ */
+  name?: string;
   validator: RegExp;
-  itemPerLine?: number;
+  /**
+   * 들어온 숫자를 어떻게 보여줄 것인지
+   * @param num 숫자
+   * @returns 보여주고자 하는 내용
+   */
   displayFunc: (num: number) => string;
+  /**
+   * 문자를 어떻게 숫자로 변환할 것인지
+   * @param str 문자
+   * @returns 변환된 숫자
+   */
   parseFunc: (str: string) => number;
   className?: string;
-  name?: string;
+
 } & ByteEditorProps & React.HTMLAttributes<HTMLDivElement>;
 
-function HexEditor({ name, bytes, setBytes, updateItem: updateItemHandler, deleteItem: deleteItemHandler, focusItem: focusItemHandler, clearItem: clearItemHandler, displayFunc, parseFunc, charPerItem, validator, selectedIdx, className, itemPerLine = 8, ...props }: HexEditorProps) {
+function HexEditor({ name, bytes, setBytes, updateItem: updateItemHandler, deleteItem: deleteItemHandler, focusItem: focusItemHandler, clearItem: clearItemHandler, displayFunc, parseFunc, charPerSlot: charPerItem, validator, selectedIdx, className, slotPerLine: itemPerLine = 8, readonly = false, ...props }: HexEditorProps) {
   const inputId = useId();
   const divRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -105,7 +129,7 @@ function HexEditor({ name, bytes, setBytes, updateItem: updateItemHandler, delet
   const clearItem = () => {
     clearItemHandler();
     // focusItemHandler(0);
-     toast.add({
+    toast.add({
       title: "Clear Complete",
       description: `success to clear data`,
       type: "success"
@@ -140,6 +164,7 @@ function HexEditor({ name, bytes, setBytes, updateItem: updateItemHandler, delet
 
   const keyHandler = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+      if (readonly) return;
       e.preventDefault();
       void onPaste();
       return;
@@ -171,6 +196,10 @@ function HexEditor({ name, bytes, setBytes, updateItem: updateItemHandler, delet
         }
         break;
       default:
+        if(readonly) {
+          // 정의된 액션이 아니면 값 입력으로 취급 -> readonly면 입력 무시
+          return;
+        }
         handleInput(key);
         break;
     }
@@ -178,7 +207,7 @@ function HexEditor({ name, bytes, setBytes, updateItem: updateItemHandler, delet
 
   return (
     <>
-      <div className="space-y-2 rounded-lg border border-border bg-background p-3 shadow-sm transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30">
+      <div className={cn("space-y-2 rounded-lg border border-border bg-background p-3 shadow-sm transition-colors focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/30", className)}>
         <div className="flex flex-row justify-end items-center gap-2">
           {
             name && <h1 className="flex-1">{name}</h1>
@@ -193,26 +222,30 @@ function HexEditor({ name, bytes, setBytes, updateItem: updateItemHandler, delet
           >
             <CopyIcon className="size-4 text-muted-foreground" />
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={onPaste}
-            aria-label="paste data"
-            title="paste data"
-          >
-            <ClipboardPasteIcon className="size-4 text-muted-foreground" />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={clearItem}
-            aria-label="clear data"
-            title="clear data"
-          >
-            <Trash2Icon className="size-4 text-muted-foreground" />
-          </Button>
+          {!readonly &&
+
+            <><Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={onPaste}
+              aria-label="paste data"
+              title="paste data"
+            >
+              <ClipboardPasteIcon className="size-4 text-muted-foreground" />
+            </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={clearItem}
+                aria-label="clear data"
+                title="clear data"
+              >
+                <Trash2Icon className="size-4 text-muted-foreground" />
+              </Button>
+            </>
+          }
         </div>
         <hr />
         <div

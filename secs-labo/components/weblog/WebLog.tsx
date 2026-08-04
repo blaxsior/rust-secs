@@ -16,6 +16,14 @@ import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { ScrollArea } from "../ui/scroll-area";
 
+const logLevelClassName: Record<string, string> = {
+    ERROR: "text-red-600",
+    WARN: "text-amber-600",
+    INFO: "text-sky-600",
+    DEBUG: "text-slate-500",
+    TRACE: "text-zinc-400",
+};
+
 /**
  * wasm에서 전달된 로그를 출력하는 영역
  */
@@ -73,7 +81,7 @@ function WebLog() {
                                 key={`${item.level}-${item.msg}-${index}`}
                                 className="rounded-md border border-border/60 bg-muted/40 px-2 py-1"
                             >
-                                <span className="mr-2 font-semibold uppercase text-muted-foreground">
+                                <span className={cn("mr-2 font-semibold uppercase text-muted-foreground", logLevelClassName[item.level] ?? "bg-muted text-muted-foreground ring-border")}>
                                     {item.level}
                                 </span>
                                 <span>{item.msg}</span>

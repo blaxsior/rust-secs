@@ -15,8 +15,8 @@ export type Secs2Variant =
   | { format: "binary"; value: Secs2Binary }
   | { format: "boolean"; value: Secs2Boolean }
   | { format: "ascii"; value: Secs2ASCII }
-  | { format: "jis8" }
-  | { format: "char" }
+  // | { format: "jis8" }
+  // | { format: "char" }
   | { format: "int8"; value: Secs2Int8 }
   | { format: "int1"; value: Secs2Int1 }
   | { format: "int2"; value: Secs2Int2 }

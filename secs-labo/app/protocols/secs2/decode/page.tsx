@@ -7,7 +7,7 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { binaryStrToNum, hexStrToNum, numToBinaryStr, numToHexStr } from "@/lib/convert";
 import { decode_secs2 } from "@/lib/wasm";
-import { ArrowRight, DeleteIcon } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useState } from "react";
 
 export default function Secs2DecodePage() {
@@ -15,9 +15,9 @@ export default function Secs2DecodePage() {
   const [message, setMessage] = useState("");
 
   const decodeMessage = () => {
-    let bytes = editorHandle.bytes;
+    const bytes = editorHandle.bytes;
     try {
-      let result = decode_secs2(Uint8Array.from(bytes));
+      const result = decode_secs2(Uint8Array.from(bytes));
       setMessage(result);
     } catch (e) {
       console.log("error occured", e);
@@ -34,13 +34,13 @@ export default function Secs2DecodePage() {
   return (
     <div className="flex min-h-0 flex-col gap-4">
       <Card className="bg-white">
-        <CardHeader className="flex-row items-start justify-between gap-3">
+        <CardHeader>
           <div>
             <CardTitle>Decode</CardTitle>
             <CardDescription>Read bytes and decode to SECS-II message.</CardDescription>
           </div>
-          <CardAction>
-            <Button variant="secondary" size="sm" onClick={decodeMessage}>
+          <CardAction className="space-x-2">
+            <Button variant="outline" size="sm" onClick={decodeMessage}>
               decode <ArrowRight className="size-4" />
             </Button>
             <Button variant="destructive" size="sm" onClick={clearAll}>
@@ -48,45 +48,64 @@ export default function Secs2DecodePage() {
             </Button>
           </CardAction>
         </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <HexEditor
-              name={"BINARY"}
-              validator={binRegex}
-              itemPerLine={4}
-              charPerItem={8}
-              parseFunc={binaryStrToNum}
-              displayFunc={numToBinaryStr}
-              aria-label={"BIN_Editor"}
-              {...editorHandle}
-            />
-            <HexEditor
-              name={"HEX"}
-              validator={hexRegex}
-              itemPerLine={4}
-              charPerItem={2}
-              parseFunc={hexStrToNum}
-              displayFunc={numToHexStr}
-              aria-label={"HEX_Editor"}
-              {...editorHandle}
-            />
+        <CardContent className="flex flex-col gap-4">
+          <Card className="ring-0">
+            <CardHeader className="px-0 pt-0">
+              <CardTitle>
+                Input
+              </CardTitle>
+              <CardDescription>
+                Enter the same byte stream in either binary or hex form.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-0 pb-0">
+              <div className="flex w-full gap-4 flex-col xl:flex-row">
+                <HexEditor
+                  name={"BINARY"}
+                  validator={binRegex}
+                  slotPerLine={4}
+                  charPerSlot={8}
+                  parseFunc={binaryStrToNum}
+                  displayFunc={numToBinaryStr}
+                  aria-label={"BIN_Editor"}
+                  {...editorHandle}
+                  className="flex-2"
+                />
 
-            <Card className="bg-white xl:col-span-2">
-              <CardHeader>
-                <CardTitle className="text-base">Decoded Message</CardTitle>
-                <CardDescription>
-                  Parsed SECS-II message output.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ScrollArea className="h-64 rounded-xl border border-slate-200">
-                  <pre className="min-h-64 whitespace-pre-wrap p-3 font-mono text-xs leading-5 text-slate-700">
+                <HexEditor
+                  name={"HEX"}
+                  validator={hexRegex}
+                  slotPerLine={4}
+                  charPerSlot={2}
+                  parseFunc={hexStrToNum}
+                  displayFunc={numToHexStr}
+                  aria-label={"HEX_Editor"}
+                  {...editorHandle}
+                  className="flex-1"
+                />
+              </div>
+            </CardContent>
+          </Card>
+          <hr/>
+          <Card className="ring-0">
+            <CardHeader className="px-0 pt-0">
+              <CardTitle>
+                Result
+              </CardTitle>
+              <CardDescription>
+                Parsed SECS-II message structure or decode error details.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-0 pb-0">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 shadow-inner">
+                <ScrollArea className="h-72 rounded-xl bg-white">
+                  <pre className="min-h-72 whitespace-pre-wrap p-4 font-mono text-xs leading-5 text-slate-700">
                     {message || "No message yet."}
                   </pre>
                 </ScrollArea>
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+            </CardContent>
+          </Card>
         </CardContent>
       </Card>
     </div>
