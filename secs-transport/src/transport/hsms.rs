@@ -192,7 +192,7 @@ impl TryFrom<&[u8]> for HsmsMessage {
             return Err(SecsTransportError::InvalidBlockLength(value.len()));
         }
 
-        let len = u32::from_be_bytes(value[0..4].try_into().unwrap()) as usize;
+        let len = u32::from_be_bytes(value[0..4].try_into().expect("header length must be 4")) as usize;
         if value.len() < 4 + len {
             return Err(SecsTransportError::InvalidBlockLength(value.len()));
         }

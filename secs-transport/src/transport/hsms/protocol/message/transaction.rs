@@ -420,7 +420,7 @@ mod tests {
 
         transaction
             .handle_timeout(SecsTimeoutUnit::T3(key))
-            .unwrap();
+            .expect("unexpected panic. should not be error!");
 
         let effects = drain_effects(&mut transaction);
         assert!(effects.contains(&HsmsTransactionEffect::ErrorOccured(

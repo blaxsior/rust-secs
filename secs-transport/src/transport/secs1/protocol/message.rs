@@ -213,7 +213,9 @@ impl Secs1MessageMachine {
             },
         };
 
-        transaction.handle_read(block).unwrap();
+        transaction
+            .handle_read(block)
+            .expect("this action should not be panic");
         let outputs = Self::take_transaction_outputs(transaction);
         self.handle_transaction_outputs(outputs, &transaction_key);
     }
@@ -290,7 +292,7 @@ impl Secs1MessageMachine {
             return;
         };
 
-        transaction.handle_timeout(ticket.timeout).unwrap();
+        transaction.handle_timeout(ticket.timeout).expect("this action should not be panic");
         let outputs = Self::take_transaction_outputs(transaction);
         self.handle_transaction_outputs(outputs, &transaction_key);
     }
