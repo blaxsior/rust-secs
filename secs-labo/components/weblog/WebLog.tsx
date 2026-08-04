@@ -36,7 +36,7 @@ function WebLog() {
     const visibleLogs = log.slice(-limit);
 
     return (
-        <Card size="sm">
+        <Card size="sm" className="flex h-64 min-h-40 resize-y flex-col overflow-auto">
             <CardHeader>
                 <CardTitle>Web Log</CardTitle>
                 <CardDescription>
@@ -63,8 +63,8 @@ function WebLog() {
                     </div>
                 </CardAction>
             </CardHeader>
-            <CardContent>
-                <ScrollArea className={cn("h-10")}>
+            <CardContent className="min-h-0 flex-1">
+                <ScrollArea className="h-full">
                     {visibleLogs.length === 0 ? (
                         <div className="text-muted-foreground">No logs yet.</div>
                     ) : (
