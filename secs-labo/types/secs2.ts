@@ -28,6 +28,8 @@ export type Secs2Variant =
   | { format: "uint2"; value: Secs2UInt2 }
   | { format: "uint4"; value: Secs2UInt4 };
 
+export type Secs2Format = Secs2Variant['format'];
+
 export type Secs2List = Secs2Item[];
 export type Secs2Binary = number[];
 export type Secs2Boolean = number[];
