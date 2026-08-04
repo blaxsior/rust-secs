@@ -5,10 +5,14 @@ import { binRegex, hexRegex } from "@/components/editor/hex/util";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SecsItemToSMLSerializer } from "@/core/secs/sml/serializer";
 import { binaryStrToNum, hexStrToNum, numToBinaryStr, numToHexStr } from "@/lib/convert";
 import { decode_secs2 } from "@/lib/wasm";
+import { Secs2Variant } from "@/types/secs2";
 import { ArrowRight } from "lucide-react";
 import { useState } from "react";
+
+const smlSerializer = new SecsItemToSMLSerializer();
 
 export default function Secs2DecodePage() {
   const editorHandle = useByteEditor();
@@ -18,7 +22,9 @@ export default function Secs2DecodePage() {
     const bytes = editorHandle.bytes;
     try {
       const result = decode_secs2(Uint8Array.from(bytes));
-      setMessage(result);
+      const json: Secs2Variant = JSON.parse(result);
+      const sml = smlSerializer.serialize(json);
+      setMessage(sml);
     } catch (e) {
       console.log("error occured", e);
       const message = e instanceof Error ? e.message : String(e);

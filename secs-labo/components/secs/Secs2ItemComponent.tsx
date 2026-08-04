@@ -1,6 +1,7 @@
 "use client";
 
 import { SMLMapping } from "@/core/secs/const";
+import { itemValidator as validate } from "./util";
 import { Secs2Format, Secs2Variant } from "@/types/secs2";
 
 type Secs2ComponentProps = {
@@ -27,21 +28,6 @@ const SECS2_FORMATS: Secs2Format[] = [
     "uint4",
 ];
 
-const NUMERIC_FORMATS = new Set<Secs2Format>([
-    "binary",
-    "boolean",
-    "int8",
-    "int1",
-    "int2",
-    "int4",
-    "float8",
-    "float4",
-    "uint8",
-    "uint1",
-    "uint2",
-    "uint4",
-]);
-
 function createEmptyVariant(format: Secs2Format): Secs2Variant {
     switch (format) {
         case "list":
@@ -64,26 +50,12 @@ function createEmptyVariant(format: Secs2Format): Secs2Variant {
     }
 }
 
-function parseNumberList(value: string): number[] {
-    if (value.trim() === "") return [];
-
-    return value
-        .split(/[\s,]+/)
-        .map((item) => Number(item))
-        .filter((item) => !Number.isNaN(item));
-}
-
-function formatValue(value: Secs2Variant["value"]): string {
-    if (typeof value === "string") return value;
-    return value.join(" ");
-}
-
 function Secs2Component({ item, onChange, onRemove, root = false }: Secs2ComponentProps) {
     const changeFormat = (format: Secs2Format) => {
         onChange(createEmptyVariant(format));
     };
 
-    const changeScalarValue = (value: string) => {
+    const changeScalarValue = (value: string, index: number) => {
         if (item.format === "list") return;
 
         if (item.format === "ascii") {
@@ -91,9 +63,25 @@ function Secs2Component({ item, onChange, onRemove, root = false }: Secs2Compone
             return;
         }
 
-        if (NUMERIC_FORMATS.has(item.format)) {
-            onChange({ format: item.format, value: parseNumberList(value) } as Secs2Variant);
-        }
+        if (value !== "" && !validate(SMLMapping[item.format])(value)) return;
+
+        const nextValue = [...item.value];
+        nextValue[index] = value === "" ? 0 : Number(value);
+        onChange({ format: item.format, value: nextValue } as Secs2Variant);
+    };
+
+    const addValue = () => {
+        if (item.format === "list") return;
+        if (item.format === "ascii") return;
+
+        onChange({ format: item.format, value: [...item.value, 0] } as Secs2Variant);
+    };
+
+    const removeValue = () => {
+        if (item.format === "list") return;
+        if (item.format === "ascii") return;
+
+        onChange({ format: item.format, value: item.value.slice(0, -1) } as Secs2Variant);
     };
 
     const addChild = () => {
@@ -149,13 +137,38 @@ function Secs2Component({ item, onChange, onRemove, root = false }: Secs2Compone
                     >
                         add
                     </button>
-                ) : (
+                ) : item.format === "ascii" ? (
                     <input
-                        value={formatValue(item.value)}
-                        onChange={(event) => changeScalarValue(event.target.value)}
+                        value={item.value}
+                        onChange={(event) => changeScalarValue(event.target.value, 0)}
                         className="min-w-48 flex-1 rounded-md border border-slate-300 px-2 py-1 font-mono text-sm"
-                        placeholder={item.format === "ascii" ? "ASCII text" : "space separated values"}
+                        placeholder="ASCII text"
                     />
+                ) : (
+                    <>
+                        {item.value.map((value, index) => (
+                            <input
+                                key={index}
+                                value={value}
+                                onChange={(event) => changeScalarValue(event.target.value, index)}
+                                className="w-20 rounded-md border border-slate-300 px-2 py-1 font-mono text-sm"
+                            />
+                        ))}
+                        <button
+                            type="button"
+                            onClick={addValue}
+                            className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 active:bg-slate-100"
+                        >
+                            +
+                        </button>
+                        <button
+                            type="button"
+                            onClick={removeValue}
+                            className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 active:bg-slate-100"
+                        >
+                            -
+                        </button>
+                    </>
                 )}
 
                 {!root && onRemove ? (
