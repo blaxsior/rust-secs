@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SMLMapping } from "@/core/secs/const"
 import type { EditorNode, EditorNodeId, EditorNodeInput } from "@/types/editor"
+import { useSecs2EditorStore } from "./store"
 
 const FORMAT_OPTIONS = [
   "list",
@@ -78,24 +79,12 @@ function getArrayValue(node: EditorNode): number[] {
   return Array.isArray(node.value.value) ? node.value.value : []
 }
 
-export function EditorInfoPanel({
-  node,
-  onSave,
-  onCreateChild,
-  onDeleteNode,
-}: {
-  node: EditorNode | null
-  onSave: (nextNode: EditorNode) => void
-  onCreateChild: (parentId: EditorNodeId, childNode: EditorNodeInput) => void
-  onDeleteNode: (nodeId: EditorNodeId) => void
-}) {
-  const [draft, setDraft] = React.useState<EditorNode | null>(node)
+export function EditorInfoPanel() {
+  const node = useSecs2EditorStore((state) =>
+    state.selectedNodeId ? state.nodes.get(state.selectedNodeId) ?? null : null
+  )
 
-  React.useEffect(() => {
-    setDraft(node)
-  }, [node])
-
-  if (!node || !draft) {
+  if (!node) {
     return (
       <Card className="h-full">
         <CardHeader>
@@ -106,12 +95,17 @@ export function EditorInfoPanel({
     )
   }
 
+  return <EditorInfoPanelContent key={node.id} node={node} />
+}
+
+function EditorInfoPanelContent({ node }: { node: EditorNode }) {
+  const setNode = useSecs2EditorStore((state) => state.setNode)
+  const createChild = useSecs2EditorStore((state) => state.createChild)
+  const deleteNode = useSecs2EditorStore((state) => state.deleteNode)
+  const [draft, setDraft] = React.useState<EditorNode>(node)
+
   const updateDraft = <K extends keyof EditorNode>(key: K, value: EditorNode[K]) => {
     setDraft((current) => {
-      if (!current) {
-        return current
-      }
-
       return {
         ...current,
         [key]: value,
@@ -141,7 +135,14 @@ export function EditorInfoPanel({
   }
 
   const removeChild = (childId: EditorNodeId) => {
-    onDeleteNode(childId)
+    if (draft.value.format === "list") {
+      updateDraft("value", {
+        ...draft.value,
+        children: draft.value.children.filter((currentChildId) => currentChildId !== childId),
+      })
+    }
+
+    deleteNode(childId)
   }
 
   return (
@@ -156,7 +157,7 @@ export function EditorInfoPanel({
               type="button"
               variant="destructive"
               size="sm"
-              onClick={() => onDeleteNode(node.id)}
+              onClick={() => deleteNode(node.id)}
             >
               Delete
             </Button>
@@ -220,7 +221,7 @@ export function EditorInfoPanel({
                 variant="outline"
                 size="icon-sm"
                 onClick={() => {
-                  onCreateChild(node.id, createDefaultChildNode())
+                  createChild(node.id, createDefaultChildNode())
                 }}
                 aria-label="Add child"
               >
@@ -314,7 +315,7 @@ export function EditorInfoPanel({
         )}
 
         <div className="flex gap-2">
-          <Button type="button" onClick={() => onSave(draft)} className="flex-1">
+          <Button type="button" onClick={() => setNode(draft)} className="flex-1">
             Save
           </Button>
         </div>

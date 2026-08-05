@@ -1,42 +1,18 @@
 "use client"
 
-import * as React from "react"
-
 import HexEditor from "@/components/editor/hex/HexEditor"
 import { useByteEditor } from "@/components/editor/hex/hooks/useEditor"
 import { binRegex, hexRegex } from "@/components/editor/hex/util"
 import Secs2Editor from "@/components/editor/protocols/secs2/Secs2Editor"
+import { useSecs2EditorStore } from "@/components/editor/protocols/secs2/store"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { encode_secs2 } from "@/lib/wasm"
 import { binaryStrToNum, hexStrToNum, numToBinaryStr, numToHexStr } from "@/lib/convert"
 import { toSecs2Item } from "@/core/secs/editor-convert"
-import type { EditorNode, EditorState } from "@/types/editor"
 import { ArrowRight } from "lucide-react"
 
-function createInitialSecs2EditorState(): EditorState {
-  const rootId = crypto.randomUUID()
-
-  const root: EditorNode = {
-    id: rootId,
-    parentId: null,
-    format: "list",
-    name: "Message",
-    description: "Encode message root",
-    value: {
-      format: "list",
-      children: [],
-    },
-  }
-
-  return {
-    rootId,
-    nodes: new Map([[rootId, root]]),
-  }
-}
-
 export default function Secs2EncodePage() {
-  const [editorState, setEditorState] = React.useState<EditorState | null>(null)
   const editorHandle = useByteEditor();
 
   const clearAll = () => {
@@ -44,6 +20,8 @@ export default function Secs2EncodePage() {
   }
 
   const encodeMessage = () => {
+    const editorState = useSecs2EditorStore.getState().getEditorState()
+
     if (!editorState) {
       return
     }
@@ -52,7 +30,7 @@ export default function Secs2EncodePage() {
     const encoded = encode_secs2(JSON.stringify(item))
     editorHandle.setBytes(Array.from(encoded))
   }
-  
+
   return (
     <div className="flex min-h-0 flex-col gap-4">
       <Card className="bg-white">
@@ -77,7 +55,7 @@ export default function Secs2EncodePage() {
               <CardDescription>Build a SECS-II message before converting it into bytes.</CardDescription>
             </CardHeader>
             <CardContent className="px-0 pb-0">
-              <Secs2Editor state={editorState} onChange={setEditorState} />
+              <Secs2Editor />
             </CardContent>
           </Card>
 

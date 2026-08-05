@@ -1,4 +1,4 @@
-import type { EditorNode, EditorNodeId, EditorState } from "@/types/editor";
+import type { EditorNode, EditorNodeId, EditorState, EditorValue } from "@/types/editor";
 import type { Secs2Item } from "@/types/secs2";
 
 function createEditorNodeId(): EditorNodeId {
@@ -39,7 +39,7 @@ function buildEditorState(
     value: {
       format: item.format,
       value: item.value,
-    },
+    } as EditorValue,
   });
 
   return id;

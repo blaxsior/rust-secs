@@ -1,12 +1,12 @@
 "use client"
 
-import { EditorStore } from "@/core/secs/editor"
 import { SMLMapping } from "@/core/secs/const"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import type { EditorNode, EditorNodeId } from "@/types/editor"
 import { cn } from "@/lib/utils"
 import { ChevronDown, ChevronRight } from "lucide-react"
+import { useSecs2EditorStore } from "./store"
 
 /**
  * 값을 문자열 형태로 표현
@@ -32,7 +32,7 @@ function stringifyValue(node: EditorNode) {
  */
 function stringifyLength(node: EditorNode): string {
   if (node.value.format === "list") {
-    let length = node.value.children.length;
+    const length = node.value.children.length;
     return length > 0 ? `[${length.toString()}]` : "";
   }
 
@@ -40,37 +40,29 @@ function stringifyLength(node: EditorNode): string {
     return "";
   }
 
-  let length = node.value.value.length;
+  const length = node.value.value.length;
   return length > 1 ? `[${length.toString()}]` : "";
 }
 
 
 
 export function Secs2ItemNode({
-  store,
   nodeId,
-  selectedNodeId,
-  onSelectNode,
-  expandedNodeIds,
-  onToggleExpandNode,
 }: {
-  store: EditorStore
   nodeId: EditorNodeId
-  selectedNodeId: EditorNodeId | null
-  onSelectNode: (nodeId: EditorNodeId) => void
-  expandedNodeIds: Set<EditorNodeId>
-  onToggleExpandNode: (nodeId: EditorNodeId) => void
 }) {
-  const node = store.getNode(nodeId)
+  const node = useSecs2EditorStore((state) => state.nodes.get(nodeId))
+  const isSelected = useSecs2EditorStore((state) => state.selectedNodeId === nodeId)
+  const expanded = useSecs2EditorStore((state) => state.openedNodeIds.has(nodeId))
+  const selectNode = useSecs2EditorStore((state) => state.selectNode)
+  const toggleNodeOpen = useSecs2EditorStore((state) => state.toggleNodeOpen)
 
   if (!node) {
     return null
   }
 
-  const isSelected = selectedNodeId === nodeId
   const children = node.value.format === "list" ? node.value.children : []
   const canExpand = node.value.format === "list" && children.length > 0
-  const expanded = expandedNodeIds.has(nodeId)
 
   return (
     <div className="space-y-2">
@@ -87,7 +79,7 @@ export function Secs2ItemNode({
             type="button"
             onClick={(event) => {
               event.stopPropagation()
-              onSelectNode(nodeId)
+              selectNode(nodeId)
             }}
             className="block w-full text-left"
           >
@@ -117,7 +109,7 @@ export function Secs2ItemNode({
               size="icon-sm"
               onClick={(event) => {
                 event.stopPropagation()
-                onToggleExpandNode(nodeId)
+                toggleNodeOpen(nodeId)
               }}
               aria-label={expanded ? "Collapse node" : "Expand node"}
               className="absolute right-2 bottom-2 rounded-lg"
@@ -133,12 +125,7 @@ export function Secs2ItemNode({
           {children.map((childId) => (
             <Secs2ItemNode
               key={childId}
-              store={store}
               nodeId={childId}
-              selectedNodeId={selectedNodeId}
-              onSelectNode={onSelectNode}
-              expandedNodeIds={expandedNodeIds}
-              onToggleExpandNode={onToggleExpandNode}
             />
           ))}
         </div>
