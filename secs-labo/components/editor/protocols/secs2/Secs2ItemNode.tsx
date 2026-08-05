@@ -1,7 +1,5 @@
 "use client"
 
-import * as React from "react"
-
 import { EditorStore } from "@/core/secs/editor"
 import { SMLMapping } from "@/core/secs/const"
 import { Button } from "@/components/ui/button"
@@ -27,19 +25,43 @@ function stringifyValue(node: EditorNode) {
   return (node.value.value ?? []).join(", ")
 }
 
+/**
+ * 아이템 길이를 표현
+ * @param node 대상 노드
+ * @returns 표현된 값
+ */
+function stringifyLength(node: EditorNode): string {
+  if (node.value.format === "list") {
+    let length = node.value.children.length;
+    return length > 0 ? `[${length.toString()}]` : "";
+  }
+
+  if (node.value.format === "ascii") {
+    return "";
+  }
+
+  let length = node.value.value.length;
+  return length > 1 ? `[${length.toString()}]` : "";
+}
+
+
+
 export function Secs2ItemNode({
   store,
   nodeId,
   selectedNodeId,
   onSelectNode,
+  expandedNodeIds,
+  onToggleExpandNode,
 }: {
   store: EditorStore
   nodeId: EditorNodeId
   selectedNodeId: EditorNodeId | null
   onSelectNode: (nodeId: EditorNodeId) => void
+  expandedNodeIds: Set<EditorNodeId>
+  onToggleExpandNode: (nodeId: EditorNodeId) => void
 }) {
   const node = store.getNode(nodeId)
-  const [expanded, setExpanded] = React.useState(false)
 
   if (!node) {
     return null
@@ -48,6 +70,7 @@ export function Secs2ItemNode({
   const isSelected = selectedNodeId === nodeId
   const children = node.value.format === "list" ? node.value.children : []
   const canExpand = node.value.format === "list" && children.length > 0
+  const expanded = expandedNodeIds.has(nodeId)
 
   return (
     <div className="space-y-2">
@@ -70,7 +93,7 @@ export function Secs2ItemNode({
           >
             <div className="flex items-center justify-between gap-2">
               <div className="font-mono text-xs uppercase tracking-wide text-slate-500">
-                {SMLMapping[node.format]}
+                {`${SMLMapping[node.format]}${stringifyLength(node)}`}
               </div>
               <div className="text-xs text-slate-500">{node.id}</div>
             </div>
@@ -94,7 +117,7 @@ export function Secs2ItemNode({
               size="icon-sm"
               onClick={(event) => {
                 event.stopPropagation()
-                setExpanded((current) => !current)
+                onToggleExpandNode(nodeId)
               }}
               aria-label={expanded ? "Collapse node" : "Expand node"}
               className="absolute right-2 bottom-2 rounded-lg"
@@ -114,6 +137,8 @@ export function Secs2ItemNode({
               nodeId={childId}
               selectedNodeId={selectedNodeId}
               onSelectNode={onSelectNode}
+              expandedNodeIds={expandedNodeIds}
+              onToggleExpandNode={onToggleExpandNode}
             />
           ))}
         </div>

@@ -49,12 +49,26 @@ function createInitialSecs2EditorState(): EditorState {
 
 export default function Secs2Editor({ state, onChange, className }: Secs2EditorProps) {
   const storeRef = React.useRef<EditorStore | null>(state ? EditorStore.fromState(state) : null)
+  const previousRootIdRef = React.useRef<EditorNodeId | null>(state?.rootId ?? null)
   const [selectedNodeId, setSelectedNodeId] = React.useState<EditorNodeId | null>(null)
+  const [expandedNodeIds, setExpandedNodeIds] = React.useState<Set<EditorNodeId>>(new Set())
 
   React.useEffect(() => {
     storeRef.current = state ? EditorStore.fromState(state) : null
-    setSelectedNodeId(null)
   }, [state])
+
+  React.useEffect(() => {
+    const nextRootId = state?.rootId ?? null
+    const previousRootId = previousRootIdRef.current
+
+    if (previousRootId === nextRootId) {
+      return
+    }
+
+    previousRootIdRef.current = nextRootId
+    setSelectedNodeId(null)
+    setExpandedNodeIds(nextRootId ? new Set([nextRootId]) : new Set())
+  }, [state?.rootId])
 
   const store = storeRef.current
   const rootId = store?.getState().rootId ?? null
@@ -80,6 +94,7 @@ export default function Secs2Editor({ state, onChange, className }: Secs2EditorP
 
     const childId = store.createNode(childNode)
     store.pushNode(parentId, fromListChildrenLength(store, parentId), childId)
+    setExpandedNodeIds((current) => new Set(current).add(parentId))
     setSelectedNodeId(childId)
     notifyChange()
   }
@@ -106,8 +121,24 @@ export default function Secs2Editor({ state, onChange, className }: Secs2EditorP
   const handleCreateRoot = () => {
     const createdState = createInitialSecs2EditorState()
     storeRef.current = EditorStore.fromState(createdState)
+    previousRootIdRef.current = createdState.rootId
+    setExpandedNodeIds(new Set([createdState.rootId]))
     setSelectedNodeId(null)
     onChange?.(createdState)
+  }
+
+  const handleToggleExpandNode = (nodeId: EditorNodeId) => {
+    setExpandedNodeIds((current) => {
+      const next = new Set(current)
+
+      if (next.has(nodeId)) {
+        next.delete(nodeId)
+      } else {
+        next.add(nodeId)
+      }
+
+      return next
+    })
   }
 
   return (
@@ -124,6 +155,8 @@ export default function Secs2Editor({ state, onChange, className }: Secs2EditorP
               nodeId={rootId}
               selectedNodeId={selectedNodeId}
               onSelectNode={(nodeId) => setSelectedNodeId(nodeId)}
+              expandedNodeIds={expandedNodeIds}
+              onToggleExpandNode={handleToggleExpandNode}
             />
           ) : (
             <div className="flex min-h-24 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4">

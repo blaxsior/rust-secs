@@ -8,7 +8,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Play } from "lucide-react";
 import { Secs2WorkspaceNav } from "./Secs2WorkspaceNav";
 
 export default function Secs2Layout({ children }: { children: ReactNode }) {
