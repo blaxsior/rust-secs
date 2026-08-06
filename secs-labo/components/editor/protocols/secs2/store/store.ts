@@ -213,18 +213,43 @@ export function createSecs2EditorStore(initState?: Secs2EditorState) {
 
     updateNode: (node) => {
       set((state) => {
-        if (!state.document || !state.document.nodes.has(node.id)) {
+        const current = state.document?.nodes.get(node.id);
+
+        if (!state.document || !current) {
           return state;
         }
 
         const nodes = new Map(state.document.nodes);
+        const deletedNodeIds = new Set<Secs2NodeId>();
+
+        if (current.value.format === "list" && node.value.format !== "list") {
+          for (const childId of current.value.children) {
+            const childDeletedNodeIds = collectSubtreeNodeIds(nodes, childId);
+
+            for (const deletedNodeId of childDeletedNodeIds) {
+              deletedNodeIds.add(deletedNodeId);
+              nodes.delete(deletedNodeId);
+            }
+          }
+        }
+
         nodes.set(node.id, node);
+
+        const openedNodeIds = new Set(state.openedNodeIds);
+        for (const deletedNodeId of deletedNodeIds) {
+          openedNodeIds.delete(deletedNodeId);
+        }
 
         return {
           document: {
             ...state.document,
             nodes,
           },
+          openedNodeIds,
+          selectedNodeId:
+            state.selectedNodeId && !deletedNodeIds.has(state.selectedNodeId)
+              ? state.selectedNodeId
+              : node.id,
         };
       });
     },
