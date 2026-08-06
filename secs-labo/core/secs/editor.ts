@@ -1,83 +1,82 @@
-import type { EditorNode, EditorNodeId, EditorNodeInput, EditorState } from "@/types/editor";
+import type { Secs2Node, Secs2NodeId, Secs2NodeInput, Secs2NodeState } from "@/types/editor";
 
-function createEditorNodeId(): EditorNodeId {
+function createEditorNodeId(): Secs2NodeId {
   return crypto.randomUUID();
 }
 
 export class EditorStore {
-  private state: EditorState;
+  private state: Secs2NodeState;
 
-  constructor(root: EditorNode) {
+  constructor(root: Secs2Node) {
     this.state = {
       rootId: root.id,
-      nodes: new Map([[root.id, root]]),
+      nodes: {
+        [root.id]: root,
+      },
     };
   }
 
-  static fromState(state: EditorState): EditorStore {
+  static fromState(state: Secs2NodeState): EditorStore {
     const store = Object.create(EditorStore.prototype) as EditorStore;
-    store.state = {
-      rootId: state.rootId,
-      nodes: new Map(state.nodes),
-    };
+    store.state = structuredClone(state);
     return store;
   }
 
-  getState(): EditorState {
+  getState(): Secs2NodeState {
     return structuredClone(this.state);
   }
 
-  getNode(nodeId: EditorNodeId): EditorNode | undefined {
-    return this.state.nodes.get(nodeId);
+  getNode(nodeId: Secs2NodeId): Secs2Node | undefined {
+    return this.state.nodes[nodeId];
   }
 
-  getChildren(nodeId: EditorNodeId): EditorNode[] {
-    const node = this.state.nodes.get(nodeId);
+  getChildren(nodeId: Secs2NodeId): Secs2Node[] {
+    const node = this.state.nodes[nodeId];
 
     if (!node || node.value.format !== "list") {
       return [];
     }
 
     return node.value.children
-      .map((childId) => this.state.nodes.get(childId))
-      .filter((child): child is EditorNode => child !== undefined);
+      .map((childId) => this.state.nodes[childId])
+      .filter((child): child is Secs2Node => child !== undefined);
   }
 
-  setNode(node: EditorNode): void {
-    this.state.nodes.set(node.id, node);
+  setNode(node: Secs2Node): void {
+    this.state.nodes[node.id] = node;
   }
 
-  updateNode(nodeId: EditorNodeId, patch: Partial<Omit<EditorNode, "id" | "parentId">>): void {
-    const current = this.state.nodes.get(nodeId);
+  updateNode(nodeId: Secs2NodeId, patch: Partial<Omit<Secs2Node, "id" | "parentId">>): void {
+    const current = this.state.nodes[nodeId];
 
     if (!current) {
       throw new Error(`Editor node not found: ${nodeId}`);
     }
 
-    this.state.nodes.set(nodeId, {
+    this.state.nodes[nodeId] = {
       ...current,
       ...patch,
-    });
+    };
   }
 
-  createNode(node: EditorNodeInput): EditorNodeId {
+  createNode(node: Secs2NodeInput): Secs2NodeId {
     const id = createEditorNodeId();
 
-    this.state.nodes.set(id, {
+    this.state.nodes[id] = {
       id,
       parentId: null,
       ...node,
-    });
+    };
 
     return id;
   }
 
-  deleteNode(nodeId: EditorNodeId): EditorNodeId {
+  deleteNode(nodeId: Secs2NodeId): Secs2NodeId {
     if (nodeId === this.state.rootId) {
       throw new Error("Cannot delete the root editor node.");
     }
 
-    const target = this.state.nodes.get(nodeId);
+    const target = this.state.nodes[nodeId];
 
     if (!target) {
       return nodeId;
@@ -90,17 +89,17 @@ export class EditorStore {
     }
 
     this.popNode(nodeId);
-    this.state.nodes.delete(nodeId);
+    delete this.state.nodes[nodeId];
 
     return nodeId;
   }
 
-  popNode(nodeId: EditorNodeId): EditorNodeId {
+  popNode(nodeId: Secs2NodeId): Secs2NodeId {
     if (nodeId === this.state.rootId) {
       throw new Error("Cannot pop the root editor node.");
     }
 
-    const target = this.state.nodes.get(nodeId);
+    const target = this.state.nodes[nodeId];
 
     if (!target) {
       return nodeId;
@@ -110,28 +109,28 @@ export class EditorStore {
       return nodeId;
     }
 
-    const parent = this.state.nodes.get(target.parentId);
+    const parent = this.state.nodes[target.parentId];
 
     if (parent?.value.format === "list") {
-      this.state.nodes.set(target.parentId, {
+      this.state.nodes[target.parentId] = {
         ...parent,
         value: {
           ...parent.value,
           children: parent.value.children.filter((childId) => childId !== nodeId),
         },
-      });
+      };
     }
 
-    this.state.nodes.set(nodeId, {
+    this.state.nodes[nodeId] = {
       ...target,
       parentId: null,
-    });
+    };
 
     return nodeId;
   }
 
-  pushNode(parentId: EditorNodeId, index: number, nodeId: EditorNodeId): EditorNodeId {
-    const parent = this.state.nodes.get(parentId);
+  pushNode(parentId: Secs2NodeId, index: number, nodeId: Secs2NodeId): Secs2NodeId {
+    const parent = this.state.nodes[parentId];
 
     if (!parent) {
       throw new Error(`Parent node not found: ${parentId}`);
@@ -141,7 +140,7 @@ export class EditorStore {
       throw new Error("Push is only allowed into list nodes.");
     }
 
-    const child = this.state.nodes.get(nodeId);
+    const child = this.state.nodes[nodeId];
 
     if (!child) {
       throw new Error(`Child node not found: ${nodeId}`);
@@ -156,17 +155,17 @@ export class EditorStore {
 
     nextChildren.splice(nextIndex, 0, nodeId);
 
-    this.state.nodes.set(parentId, {
+    this.state.nodes[parentId] = {
       ...parent,
       value: {
         ...parent.value,
         children: nextChildren,
       },
-    });
-    this.state.nodes.set(nodeId, {
+    };
+    this.state.nodes[nodeId] = {
       ...child,
       parentId,
-    });
+    };
 
     return nodeId;
   }

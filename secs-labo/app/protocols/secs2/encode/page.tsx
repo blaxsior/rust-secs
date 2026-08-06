@@ -1,10 +1,11 @@
 "use client"
 
+import * as React from "react"
+
 import HexEditor from "@/components/editor/hex/HexEditor"
 import { useByteEditor } from "@/components/editor/hex/hooks/useEditor"
 import { binRegex, hexRegex } from "@/components/editor/hex/util"
-import Secs2Editor from "@/components/editor/protocols/secs2/Secs2Editor"
-import { useSecs2EditorStore } from "@/components/editor/protocols/secs2/store"
+import Secs2Editor, { type Secs2EditorHandle } from "@/components/editor/protocols/secs2/Secs2Editor"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { encode_secs2 } from "@/lib/wasm"
@@ -14,19 +15,20 @@ import { ArrowRight } from "lucide-react"
 
 export default function Secs2EncodePage() {
   const editorHandle = useByteEditor();
+  const secs2EditorRef = React.useRef<Secs2EditorHandle>(null);
 
   const clearAll = () => {
     editorHandle.setBytes([]);
   }
 
   const encodeMessage = () => {
-    const editorState = useSecs2EditorStore.getState().getEditorState()
+    const document = secs2EditorRef.current?.getDocument();
 
-    if (!editorState) {
+    if (!document) {
       return
     }
 
-    const item = toSecs2Item(editorState)
+    const item = toSecs2Item(document)
     const encoded = encode_secs2(JSON.stringify(item))
     editorHandle.setBytes(Array.from(encoded))
   }
@@ -55,7 +57,7 @@ export default function Secs2EncodePage() {
               <CardDescription>Build a SECS-II message before converting it into bytes.</CardDescription>
             </CardHeader>
             <CardContent className="px-0 pb-0">
-              <Secs2Editor />
+              <Secs2Editor ref={secs2EditorRef} />
             </CardContent>
           </Card>
 

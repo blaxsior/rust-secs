@@ -3,7 +3,7 @@
 import { SMLMapping } from "@/core/secs/const"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import type { EditorNode, EditorNodeId } from "@/types/editor"
+import type { Secs2Node, Secs2NodeId } from "@/types/editor"
 import { cn } from "@/lib/utils"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { useSecs2EditorStore } from "./store"
@@ -13,7 +13,7 @@ import { useSecs2EditorStore } from "./store"
  * @param node 대상 노드
  * @returns 표현된 값
  */
-function stringifyValue(node: EditorNode) {
+function stringifyValue(node: Secs2Node) {
   if (node.value.format === "list") {
     return `${node.value.children.length} children`
   }
@@ -30,7 +30,7 @@ function stringifyValue(node: EditorNode) {
  * @param node 대상 노드
  * @returns 표현된 값
  */
-function stringifyLength(node: EditorNode): string {
+function stringifyLength(node: Secs2Node): string {
   if (node.value.format === "list") {
     const length = node.value.children.length;
     return length > 0 ? `[${length.toString()}]` : "";
@@ -49,9 +49,9 @@ function stringifyLength(node: EditorNode): string {
 export function Secs2ItemNode({
   nodeId,
 }: {
-  nodeId: EditorNodeId
+  nodeId: Secs2NodeId
 }) {
-  const node = useSecs2EditorStore((state) => state.nodes.get(nodeId))
+  const node = useSecs2EditorStore((state) => state.document?.nodes.get(nodeId))
   const isSelected = useSecs2EditorStore((state) => state.selectedNodeId === nodeId)
   const expanded = useSecs2EditorStore((state) => state.openedNodeIds.has(nodeId))
   const selectNode = useSecs2EditorStore((state) => state.selectNode)

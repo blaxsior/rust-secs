@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { SMLMapping } from "@/core/secs/const"
-import type { EditorNode, EditorNodeId, EditorNodeInput } from "@/types/editor"
+import type { Secs2Node, Secs2NodeId, Secs2NodeInput } from "@/types/editor"
 import { useSecs2EditorStore } from "./store"
 
 const FORMAT_OPTIONS = [
@@ -27,7 +27,7 @@ const FORMAT_OPTIONS = [
   "uint4",
 ] as const
 
-function createEmptyValue(format: EditorNode["format"]) {
+function createEmptyValue(format: Secs2Node["format"]) {
   if (format === "list") {
     return {
       format,
@@ -45,10 +45,10 @@ function createEmptyValue(format: EditorNode["format"]) {
   return {
     format,
     value: [],
-  } as EditorNode["value"]
+  } as Secs2Node["value"]
 }
 
-function createDefaultChildNode(): EditorNodeInput {
+function createDefaultChildNode(): Secs2NodeInput {
   return {
     format: "ascii",
     name: undefined,
@@ -60,14 +60,14 @@ function createDefaultChildNode(): EditorNodeInput {
   }
 }
 
-function getDefaultScalarValue(format: Exclude<EditorNode["format"], "list" | "ascii">) {
+function getDefaultScalarValue(format: Exclude<Secs2Node["format"], "list" | "ascii">) {
   return {
     format,
     value: [],
-  } as EditorNode["value"]
+  } as Secs2Node["value"]
 }
 
-function getArrayValue(node: EditorNode): number[] {
+function getArrayValue(node: Secs2Node): number[] {
   if (node.value.format === "list") {
     return []
   }
@@ -81,7 +81,7 @@ function getArrayValue(node: EditorNode): number[] {
 
 export function EditorInfoPanel() {
   const node = useSecs2EditorStore((state) =>
-    state.selectedNodeId ? state.nodes.get(state.selectedNodeId) ?? null : null
+    state.selectedNodeId ? state.document?.nodes.get(state.selectedNodeId) ?? null : null
   )
 
   if (!node) {
@@ -98,13 +98,13 @@ export function EditorInfoPanel() {
   return <EditorInfoPanelContent key={node.id} node={node} />
 }
 
-function EditorInfoPanelContent({ node }: { node: EditorNode }) {
-  const setNode = useSecs2EditorStore((state) => state.setNode)
+function EditorInfoPanelContent({ node }: { node: Secs2Node }) {
+  const setNode = useSecs2EditorStore((state) => state.updateNode)
   const createChild = useSecs2EditorStore((state) => state.createChild)
   const deleteNode = useSecs2EditorStore((state) => state.deleteNode)
-  const [draft, setDraft] = React.useState<EditorNode>(node)
+  const [draft, setDraft] = React.useState<Secs2Node>(node)
 
-  const updateDraft = <K extends keyof EditorNode>(key: K, value: EditorNode[K]) => {
+  const updateDraft = <K extends keyof Secs2Node>(key: K, value: Secs2Node[K]) => {
     setDraft((current) => {
       return {
         ...current,
@@ -121,7 +121,7 @@ function EditorInfoPanelContent({ node }: { node: EditorNode }) {
     updateDraft("value", {
       format: draft.value.format,
       value: nextValues,
-    } as EditorNode["value"])
+    } as Secs2Node["value"])
   }
 
   const appendArrayValue = () => {
@@ -134,7 +134,7 @@ function EditorInfoPanelContent({ node }: { node: EditorNode }) {
     updateArrayValue(nextValues)
   }
 
-  const removeChild = (childId: EditorNodeId) => {
+  const removeChild = (childId: Secs2NodeId) => {
     if (draft.value.format === "list") {
       updateDraft("value", {
         ...draft.value,
@@ -170,7 +170,7 @@ function EditorInfoPanelContent({ node }: { node: EditorNode }) {
             id="editor-node-format"
             value={draft.format}
             onChange={(event) => {
-              const nextFormat = event.target.value as EditorNode["format"]
+              const nextFormat = event.target.value as Secs2Node["format"]
               updateDraft("format", nextFormat)
               updateDraft(
                 "value",

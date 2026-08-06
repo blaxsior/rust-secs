@@ -1,28 +1,28 @@
-import type { Secs2Format, Secs2Item, Secs2Variant } from "./secs2";
+import type { Secs2Format, Secs2Variant } from "./secs2";
 
-export type EditorNodeId = string;
+export type Secs2NodeId = string;
 
-export type EditorNode = {
-  id: EditorNodeId;
-  parentId: EditorNodeId | null;
+export type Secs2Node = {
+  id: Secs2NodeId;
+  parentId: Secs2NodeId | null;
   format: Secs2Format;
   name?: string;
   description?: string;
-  value: EditorValue;
+  value: Secs2NodeValue;
 };
 
 type NonListSecs2Variant = Exclude<Secs2Variant, { format: "list" }>;
 
-export type EditorValue =
-  | { format: "list"; children: EditorNodeId[] }
+export type Secs2NodeValue =
+  | { format: "list"; children: Secs2NodeId[] }
   | NonListSecs2Variant;
 
-export type EditorState = {
-  rootId: EditorNodeId;
-  nodes: Map<EditorNodeId, EditorNode>;
+export type Secs2NodeState = {
+  rootId: Secs2NodeId;
+  nodes: Record<Secs2NodeId, Secs2Node>;
 };
 
 /**
  * Editor에 노드를 새롭게 추가할 때 사용
  */
-export type EditorNodeInput = Omit<EditorNode, "id" | "parentId">;
+export type Secs2NodeInput = Omit<Secs2Node, "id" | "parentId">;
