@@ -53,14 +53,18 @@ const Secs2EditorInner = React.forwardRef<Secs2EditorHandle, Secs2EditorProps>(
       <div className={cn("grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.8fr)]", className)}>
         <Card className="min-h-[40rem]"
           onContextMenu={(e) => { e.preventDefault(); selectNode(null); }}
-          onClick={(e) => { e.preventDefault(); selectNode(null); }}
+          // onClick={(e) => { e.preventDefault(); selectNode(null); }}
         >
           <CardHeader>
             <CardTitle>SECS-II Items</CardTitle>
             <CardDescription>Click a node to inspect and edit it.</CardDescription>
           </CardHeader>
           <ContextMenu>
-            <ContextMenuTrigger>
+            <ContextMenuTrigger
+              onClick={() => console.log("click")}
+              onContextMenu={() => console.log("contextmenu")}
+              onTouchStart={() => console.log("touchstart")}
+            >
               <CardContent className="space-y-2">
                 {rootId ? (
                   <Secs2ItemNode nodeId={rootId} />
