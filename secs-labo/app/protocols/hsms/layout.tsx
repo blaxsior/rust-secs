@@ -3,12 +3,10 @@ import { WorkspaceNavigationCard } from "@/components/navigation/WorkspaceNaviga
 import WebLog from "@/components/weblog/WebLog";
 
 const workspaceItems = [
-  { href: "/protocols/secs2", label: "Overview", segment: null },
-  { href: "/protocols/secs2/encode", label: "Encode", segment: "encode" },
-  { href: "/protocols/secs2/decode", label: "Decode", segment: "decode" },
+  { href: "/protocols/hsms", label: "Overview", segment: null },
 ] as const;
 
-export default function Secs2Layout({ children }: { children: ReactNode }) {
+export default function HsmsLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-[calc(100vh-0px)] bg-[radial-gradient(circle_at_top_left,_rgba(34,197,94,0.16),_transparent_32%),radial-gradient(circle_at_top_right,_rgba(59,130,246,0.14),_transparent_28%),linear-gradient(180deg,_#fafafa_0%,_#f4f7fb_100%)] text-slate-900">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 py-4 sm:px-6 lg:px-8">
@@ -18,10 +16,10 @@ export default function Secs2Layout({ children }: { children: ReactNode }) {
               Protocol Workbench
             </p>
             <h1 className="text-xl font-semibold tracking-tight text-slate-950">
-              SECS-II Message Lab
+              HSMS Transport Lab
             </h1>
             <p className="text-sm text-slate-600">
-              Byte와 message를 오가며 구조를 만들고 검증하는 시작점입니다.
+              Explore TCP sessions, HSMS control messages, and SECS-II payload exchange.
             </p>
           </div>
         </header>
@@ -29,7 +27,7 @@ export default function Secs2Layout({ children }: { children: ReactNode }) {
         <main className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
           <aside className="flex min-h-0 flex-col gap-4">
             <WorkspaceNavigationCard
-              description="Encode & Decode SECS-II Msg"
+              description="Jump between HSMS transport."
               items={workspaceItems}
             />
             <WebLog />

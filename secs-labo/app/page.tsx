@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Binary, Cpu, Workflow } from "lucide-react";
+import { ArrowRight, Binary, Cable, Cpu, Network, Workflow } from "lucide-react";
 
 const sections = [
   {
@@ -7,7 +7,9 @@ const sections = [
     description: "SECS-I, SECS-II, HSMS 메시지를 byte와 구조화 메시지로 변환하고 검증하는 작업 공간입니다.",
     accent: "from-emerald-500/15 to-cyan-500/10",
     items: [
+      { label: "SECS-I lab", href: "/protocols/secs1", icon: Cable },
       { label: "SECS-II lab", href: "/protocols/secs2", icon: Binary },
+      { label: "HSMS lab", href: "/protocols/hsms", icon: Network },
     ],
   },
   {

@@ -1,22 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useSelectedLayoutSegment } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-const items = [
-  { href: "/protocols/secs2", label: "Overview" },
-  { href: "/protocols/secs2/encode", label: "Encode" },
-  { href: "/protocols/secs2/decode", label: "Decode" },
-] as const;
+export type WorkspaceNavigationItem = {
+  href: string;
+  label: string;
+  segment?: string | null;
+};
 
-export function Secs2WorkspaceNav() {
-  const pathname = usePathname();
+export function WorkspaceNavigation({
+  items,
+}: {
+  items: readonly WorkspaceNavigationItem[];
+}) {
+  const selectedSegment = useSelectedLayoutSegment();
 
   return (
     <div className="space-y-2">
       {items.map((item) => {
-        const active = pathname === item.href;
+        const active = (item.segment ?? null) === selectedSegment;
 
         return (
           <Link

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Menu, Cpu, Binary, Workflow } from "lucide-react";
+import { Menu, Cpu, Binary, Cable, Network, Workflow } from "lucide-react";
 import { WasmLoader } from "@/components/WasmLoader";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toast";
@@ -58,11 +58,25 @@ export default function RootLayout({
                   Home
                 </Link>
                 <Link
+                  href="/protocols/secs1"
+                  className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100"
+                >
+                  <Cable className="size-4 text-slate-500" />
+                  SECS-I lab
+                </Link>
+                <Link
                   href="/protocols/secs2"
                   className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100"
                 >
                   <Binary className="size-4 text-slate-500" />
                   SECS-II lab
+                </Link>
+                <Link
+                  href="/protocols/hsms"
+                  className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100"
+                >
+                  <Network className="size-4 text-slate-500" />
+                  HSMS lab
                 </Link>
                 <Link
                   href="/simulator"
