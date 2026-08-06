@@ -9,16 +9,20 @@ import type {
   Secs2NodeState,
 } from "@/types/editor";
 
-export type Secs2EditorNodeMapState = {
-  rootId: Secs2NodeId;
-  nodes: Map<Secs2NodeId, Secs2Node>;
+type Secs2ListNode = Secs2Node & {
+  value: {
+    format: "list";
+    children: Secs2NodeId[];
+  };
 };
+
+export type Secs2SiblingInsertPosition = "above" | "below";
 
 /**
  * secs2 editor 상태 값
  */
 export type Secs2EditorState = {
-  document: Secs2EditorNodeMapState | null;
+  document: Secs2NodeState | null;
   selectedNodeId: Secs2NodeId | null;
   openedNodeIds: Set<Secs2NodeId>;
 };
@@ -35,6 +39,11 @@ export type Secs2EditorAction = {
    * 루트 노드를 제거한다.
    */
   deleteRoot: () => void;
+  /**
+   * 특정 노드를 선택한다.
+   * @param nodeId 선택할 노드. null이면 아무것도 선택 안함
+   * @returns 
+   */
   selectNode: (nodeId: Secs2NodeId | null) => void;
   toggleNodeOpen: (nodeId: Secs2NodeId) => void;
   /**
@@ -51,6 +60,11 @@ export type Secs2EditorAction = {
   createChild: (
     parentId: Secs2NodeId,
     childNode: Secs2NodeInput,
+  ) => Secs2NodeId | null;
+  createSibling: (
+    targetId: Secs2NodeId,
+    childNode: Secs2NodeInput,
+    position: Secs2SiblingInsertPosition,
   ) => Secs2NodeId | null;
   /**
    * 특정 노드를 제거한다
@@ -105,11 +119,11 @@ function createRootNode(): Secs2Node {
  * @param collected 수집된 노드 ID 집합
  */
 function collectSubtreeNodeIds(
-  nodes: Map<Secs2NodeId, Secs2Node>,
+  nodes: Record<Secs2NodeId, Secs2Node>,
   nodeId: Secs2NodeId,
   collected = new Set<Secs2NodeId>(),
 ) {
-  const node = nodes.get(nodeId);
+  const node = nodes[nodeId];
 
   if (!node) {
     return collected;
@@ -134,11 +148,11 @@ function collectSubtreeNodeIds(
  * @returns
  */
 function isNodeVisible(
-  nodes: Map<Secs2NodeId, Secs2Node>,
+  nodes: Record<Secs2NodeId, Secs2Node>,
   openedNodeIds: Set<Secs2NodeId>,
   nodeId: Secs2NodeId,
 ) {
-  let current = nodes.get(nodeId);
+  let current = nodes[nodeId];
 
   while (current?.parentId) {
     const parentId = current.parentId;
@@ -147,10 +161,59 @@ function isNodeVisible(
       return false;
     }
 
-    current = nodes.get(parentId);
+    current = nodes[parentId];
   }
 
   return Boolean(current);
+}
+
+/**
+ * 자식 노드를 추가한다.
+ * @param document editor node 상태
+ * @param openedNodeIds 현재 열려 있는 노드 id의 집합
+ * @param parent 부모 노드(항상 list)
+ * @param childNode 추가할 자식 노드
+ * @param insertIndex 자식 노드를 추가할 위치
+ * @returns 
+ */
+function insertChildNode(
+  document: Secs2NodeState,
+  openedNodeIds: Set<Secs2NodeId>,
+  parent: Secs2ListNode,
+  childNode: Secs2NodeInput,
+  insertIndex: number,
+) {
+  const childId = createEditorNodeId();
+  const child: Secs2Node = {
+    ...childNode,
+    id: childId,
+    parentId: parent.id,
+  };
+  const children = [...parent.value.children];
+  children.splice(insertIndex, 0, childId);
+
+  const nodes = { ...document.nodes };
+  nodes[parent.id] = {
+    ...parent,
+    value: {
+      ...parent.value,
+      children,
+    },
+  };
+  nodes[childId] = child;
+
+  const nextOpenedNodeIds = new Set(openedNodeIds);
+  nextOpenedNodeIds.add(parent.id);
+
+  return {
+    childId,
+    document: {
+      ...document,
+      nodes,
+    },
+    openedNodeIds: nextOpenedNodeIds,
+    selectedNodeId: childId,
+  };
 }
 
 /**
@@ -170,7 +233,9 @@ export function createSecs2EditorStore(initState?: Secs2EditorState) {
       set({
         document: {
           rootId: root.id,
-          nodes: new Map([[root.id, root]]),
+          nodes: {
+            [root.id]: root,
+          },
         },
         selectedNodeId: null,
         openedNodeIds: new Set([root.id]),
@@ -192,7 +257,7 @@ export function createSecs2EditorStore(initState?: Secs2EditorState) {
     toggleNodeOpen: (nodeId) => {
       set((state) => {
         const openedNodeIds = new Set(state.openedNodeIds);
-        const nodes = state.document?.nodes ?? new Map();
+        const nodes = state.document?.nodes ?? {};
 
         if (openedNodeIds.has(nodeId)) {
           openedNodeIds.delete(nodeId);
@@ -213,13 +278,13 @@ export function createSecs2EditorStore(initState?: Secs2EditorState) {
 
     updateNode: (node) => {
       set((state) => {
-        const current = state.document?.nodes.get(node.id);
+        const current = state.document?.nodes[node.id];
 
         if (!state.document || !current) {
           return state;
         }
 
-        const nodes = new Map(state.document.nodes);
+        const nodes = { ...state.document.nodes };
         const deletedNodeIds = new Set<Secs2NodeId>();
 
         if (current.value.format === "list" && node.value.format !== "list") {
@@ -228,12 +293,12 @@ export function createSecs2EditorStore(initState?: Secs2EditorState) {
 
             for (const deletedNodeId of childDeletedNodeIds) {
               deletedNodeIds.add(deletedNodeId);
-              nodes.delete(deletedNodeId);
+              delete nodes[deletedNodeId];
             }
           }
         }
 
-        nodes.set(node.id, node);
+        nodes[node.id] = node;
 
         const openedNodeIds = new Set(state.openedNodeIds);
         for (const deletedNodeId of deletedNodeIds) {
@@ -259,38 +324,68 @@ export function createSecs2EditorStore(initState?: Secs2EditorState) {
 
       set((state) => {
         const document = state.document;
-        const parent = document?.nodes.get(parentId);
+        const parent = document?.nodes[parentId];
 
         if (!document || !parent || parent.value.format !== "list") {
           return state;
         }
 
-        childId = createEditorNodeId();
-        const child: Secs2Node = {
-          ...childNode,
-          id: childId,
-          parentId,
-        };
-        const nodes = new Map(document.nodes);
-        nodes.set(parentId, {
-          ...parent,
-          value: {
-            ...parent.value,
-            children: [...parent.value.children, childId],
-          },
-        });
-        nodes.set(childId, child);
-
-        const openedNodeIds = new Set(state.openedNodeIds);
-        openedNodeIds.add(parentId);
+        const nextState = insertChildNode(
+          document,
+          state.openedNodeIds,
+          parent as Secs2ListNode,
+          childNode,
+          parent.value.children.length,
+        );
+        childId = nextState.childId;
 
         return {
-          document: {
-            ...document,
-            nodes,
-          },
-          openedNodeIds,
-          selectedNodeId: childId,
+          document: nextState.document,
+          openedNodeIds: nextState.openedNodeIds,
+          selectedNodeId: nextState.selectedNodeId,
+        };
+      });
+
+      return childId;
+    },
+
+    createSibling: (targetId, childNode, position) => {
+      let childId: Secs2NodeId | null = null;
+
+      set((state) => {
+        const document = state.document;
+        const target = document?.nodes[targetId];
+
+        if (!document || !target?.parentId) {
+          return state;
+        }
+
+        const parent = document.nodes[target.parentId];
+
+        if (!parent || parent.value.format !== "list") {
+          return state;
+        }
+
+        const targetIndex = parent.value.children.indexOf(targetId);
+
+        if (targetIndex < 0) {
+          return state;
+        }
+
+        const insertIndex = position === "above" ? targetIndex : targetIndex + 1;
+        const nextState = insertChildNode(
+          document,
+          state.openedNodeIds,
+          parent as Secs2ListNode,
+          childNode,
+          insertIndex,
+        );
+        childId = nextState.childId;
+
+        return {
+          document: nextState.document,
+          openedNodeIds: nextState.openedNodeIds,
+          selectedNodeId: nextState.selectedNodeId,
         };
       });
 
@@ -307,7 +402,7 @@ export function createSecs2EditorStore(initState?: Secs2EditorState) {
           };
         }
 
-        const node = state.document?.nodes.get(nodeId);
+        const node = state.document?.nodes[nodeId];
 
         if (!state.document || !node) {
           return state;
@@ -317,13 +412,13 @@ export function createSecs2EditorStore(initState?: Secs2EditorState) {
           state.document.nodes,
           nodeId,
         );
-        const nodes = new Map(state.document.nodes);
+        const nodes = { ...state.document.nodes };
 
         if (node.parentId) {
-          const parent = nodes.get(node.parentId);
+          const parent = nodes[node.parentId];
 
           if (parent?.value.format === "list") {
-            nodes.set(node.parentId, {
+            nodes[node.parentId] = {
               ...parent,
               value: {
                 ...parent.value,
@@ -331,12 +426,12 @@ export function createSecs2EditorStore(initState?: Secs2EditorState) {
                   (childId) => childId !== nodeId,
                 ),
               },
-            });
+            };
           }
         }
 
         for (const deletedNodeId of deletedNodeIds) {
-          nodes.delete(deletedNodeId);
+          delete nodes[deletedNodeId];
         }
 
         const openedNodeIds = new Set(state.openedNodeIds);
@@ -367,7 +462,7 @@ export function createSecs2EditorStore(initState?: Secs2EditorState) {
 
       return {
         rootId: document.rootId,
-        nodes: structuredClone(Object.fromEntries(document.nodes)),
+        nodes: structuredClone(document.nodes),
       };
     },
 
@@ -376,7 +471,7 @@ export function createSecs2EditorStore(initState?: Secs2EditorState) {
         document: document
           ? {
               rootId: document.rootId,
-              nodes: new Map(Object.entries(structuredClone(document.nodes))),
+              nodes: structuredClone(document.nodes),
             }
           : null,
         selectedNodeId: null,

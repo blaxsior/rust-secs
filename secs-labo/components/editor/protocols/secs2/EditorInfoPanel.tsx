@@ -81,7 +81,7 @@ function getArrayValue(node: Secs2Node): number[] {
 
 export function EditorInfoPanel() {
   const node = useSecs2EditorStore((state) =>
-    state.selectedNodeId ? state.document?.nodes.get(state.selectedNodeId) ?? null : null
+    state.selectedNodeId ? state.document?.nodes[state.selectedNodeId] ?? null : null
   )
 
   if (!node) {

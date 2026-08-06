@@ -44,14 +44,12 @@ function stringifyLength(node: Secs2Node): string {
   return length > 1 ? `[${length.toString()}]` : "";
 }
 
-
-
 export function Secs2ItemNode({
   nodeId,
 }: {
   nodeId: Secs2NodeId
 }) {
-  const node = useSecs2EditorStore((state) => state.document?.nodes.get(nodeId))
+  const node = useSecs2EditorStore((state) => state.document?.nodes[nodeId])
   const isSelected = useSecs2EditorStore((state) => state.selectedNodeId === nodeId)
   const expanded = useSecs2EditorStore((state) => state.openedNodeIds.has(nodeId))
   const selectNode = useSecs2EditorStore((state) => state.selectNode)
@@ -67,6 +65,7 @@ export function Secs2ItemNode({
   return (
     <div className="space-y-2">
       <Card
+        onContextMenu={() => selectNode(nodeId)}
         className={cn(
           "relative border px-0 py-0 shadow-none",
           isSelected
