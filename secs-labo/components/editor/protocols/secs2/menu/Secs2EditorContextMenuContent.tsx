@@ -12,7 +12,7 @@ function useContextMenuItems() {
   )
 
   if (!selectedNode) {
-    return null
+    return <div className="px-4 py-2 text-sm text-slate-500">No node selected</div>
   }
 
   return (
@@ -34,9 +34,9 @@ function useContextMenuItems() {
 export function Secs2EditorContextMenuContent() {
   const content = useContextMenuItems()
 
-  if (!content) {
-    return null
-  }
+  // if (!content) {
+  //   return null
+  // }
 
   return (
     <ContextMenuContent>

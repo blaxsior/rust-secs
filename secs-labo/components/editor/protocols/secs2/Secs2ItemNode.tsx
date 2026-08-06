@@ -15,7 +15,7 @@ import { useSecs2EditorStore } from "./store"
  */
 function stringifyValue(node: Secs2Node) {
   if (node.value.format === "list") {
-    return `${node.value.children.length} children`
+    return "";
   }
 
   if (node.value.format === "ascii") {
@@ -32,8 +32,7 @@ function stringifyValue(node: Secs2Node) {
  */
 function stringifyLength(node: Secs2Node): string {
   if (node.value.format === "list") {
-    const length = node.value.children.length;
-    return length > 0 ? `[${length.toString()}]` : "";
+    return `[${node.value.children.length.toString()}]`;
   }
 
   if (node.value.format === "ascii") {
@@ -80,24 +79,28 @@ export function Secs2ItemNode({
               event.stopPropagation()
               selectNode(nodeId)
             }}
-            className="block w-full text-left"
+            className="block w-full text-left space-y-1"
           >
-            <div className="flex items-center justify-between gap-2">
-              <div className="font-mono text-xs uppercase tracking-wide text-slate-500">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium">
+                {node.name?.trim() ? node.name : "Untitled"}
+              </span>
+              {node.description?.trim() ? (
+                <span className="text-xs text-slate-500">
+                  {node.description}
+                </span>
+              ) : null}
+              <span className="text-xs text-slate-500 ml-auto truncate max-w-20" title={node.id}>
+                {node.id}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="font-mono text-xs uppercase tracking-wide text-slate-800">
                 {`${SMLMapping[node.format]}${stringifyLength(node)}`}
               </div>
-              <div className="text-xs text-slate-500">{node.id}</div>
-            </div>
-            <div className="mt-1 text-sm font-medium">
-              {node.name?.trim() ? node.name : "Untitled node"}
-            </div>
-            {node.description?.trim() ? (
-              <div className="mt-1 line-clamp-2 text-xs text-slate-500">
-                {node.description}
+              <div className="font-mono text-xs text-slate-500">
+                {stringifyValue(node)}
               </div>
-            ) : null}
-            <div className="mt-2 font-mono text-xs text-slate-500">
-              {stringifyValue(node)}
             </div>
           </button>
 
