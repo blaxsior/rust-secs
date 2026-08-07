@@ -8,6 +8,7 @@ extern crate alloc;
 pub mod convert;
 pub mod error;
 pub mod item;
+pub mod validate;
 
 /// SECS-II Stream Id
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
