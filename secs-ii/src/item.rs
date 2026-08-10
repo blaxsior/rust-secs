@@ -69,6 +69,48 @@ pub enum Secs2Variant {
 }
 
 impl Secs2Variant {
+    pub fn count(&self) -> usize {
+        match self {
+            Self::List(v) => v.count(),
+            Self::Binary(v) => v.count(),
+            Self::Boolean(v) => v.count(),
+            Self::ASCII(v) => v.count(),
+            Self::Jis8 => unimplemented!(),
+            Self::Char => unimplemented!(),
+            Self::Int8(v) => v.count(),
+            Self::Int1(v) => v.count(),
+            Self::Int2(v) => v.count(),
+            Self::Int4(v) => v.count(),
+            Self::Float8(v) => v.count(),
+            Self::Float4(v) => v.count(),
+            Self::UInt8(v) => v.count(),
+            Self::UInt1(v) => v.count(),
+            Self::UInt2(v) => v.count(),
+            Self::UInt4(v) => v.count(),
+        }
+    }
+
+    pub fn length(&self) -> usize {
+        match self {
+            Self::List(v) => v.length(),
+            Self::Binary(v) => v.length(),
+            Self::Boolean(v) => v.length(),
+            Self::ASCII(v) => v.length(),
+            Self::Jis8 => unimplemented!(),
+            Self::Char => unimplemented!(),
+            Self::Int8(v) => v.length(),
+            Self::Int1(v) => v.length(),
+            Self::Int2(v) => v.length(),
+            Self::Int4(v) => v.length(),
+            Self::Float8(v) => v.length(),
+            Self::Float4(v) => v.length(),
+            Self::UInt8(v) => v.length(),
+            Self::UInt1(v) => v.length(),
+            Self::UInt2(v) => v.length(),
+            Self::UInt4(v) => v.length(),
+        }
+    }
+
     pub fn value(&self) -> Result<&dyn Secs2Item, Secs2Error> {
         match self {
             Self::List(v) => Ok(v),
@@ -266,7 +308,12 @@ pub trait Secs2Item {
     fn as_enum(self) -> Secs2Variant;
 
     ///
-    /// item의 길이를 반환한다
+    /// item의 count를 반환한다. scalar = bytes length, list = item count
+    ///
+    fn count(&self) -> usize;
+
+    ///
+    /// item의 length bytes을 반환한다. scalar = bytes length, list = item count
     ///
     fn length(&self) -> usize;
 }

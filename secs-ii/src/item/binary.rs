@@ -31,8 +31,12 @@ impl Secs2Item for Secs2Binary {
         Secs2Variant::Binary(self)
     }
 
-    fn length(&self) -> usize {
+    fn count(&self) -> usize {
         self.item.len()
+    }
+
+    fn length(&self) -> usize {
+        self.count()
     }
 }
 impl Encode for Secs2Binary {

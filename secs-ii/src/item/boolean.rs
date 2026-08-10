@@ -43,8 +43,12 @@ impl Secs2Item for Secs2Boolean {
         Secs2Variant::Boolean(self)
     }
 
-    fn length(&self) -> usize {
+    fn count(&self) -> usize {
         self.item.len()
+    }
+
+    fn length(&self) -> usize {
+        self.count()
     }
 }
 

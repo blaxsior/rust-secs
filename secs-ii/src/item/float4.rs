@@ -32,8 +32,12 @@ impl Secs2Item for Secs2Float4 {
         Secs2Variant::Float4(self)
     }
 
+    fn count(&self) -> usize {
+        self.item.len()
+    }
+
     fn length(&self) -> usize {
-        self.item.len() * SECS2_FLOAT4_SIZE
+        self.count() * SECS2_FLOAT4_SIZE
     }
 }
 

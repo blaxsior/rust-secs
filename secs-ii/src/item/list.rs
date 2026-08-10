@@ -28,7 +28,11 @@ impl Secs2Item for Secs2List {
         return Secs2Variant::List(self);
     }
 
+    fn count(&self) -> usize {
+        self.item.len()
+    }
+
     fn length(&self) -> usize {
-        return self.item.len();
+        return self.count();
     }
 }

@@ -32,8 +32,12 @@ impl Secs2Item for Secs2ASCII {
         Secs2Variant::ASCII(self)
     }
 
-    fn length(&self) -> usize {
+    fn count(&self) -> usize {
         self.item.chars().count()
+    }
+
+    fn length(&self) -> usize {
+        self.count()
     }
 }
 

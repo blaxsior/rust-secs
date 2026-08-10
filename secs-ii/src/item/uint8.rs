@@ -32,8 +32,12 @@ impl Secs2Item for Secs2Uint8 {
         Secs2Variant::UInt8(self)
     }
 
+    fn count(&self) -> usize {
+        self.item.len()
+    }
+
     fn length(&self) -> usize {
-        self.item.len() * SECS2_UINT8_SIZE
+        self.count() * SECS2_UINT8_SIZE
     }
 }
 
