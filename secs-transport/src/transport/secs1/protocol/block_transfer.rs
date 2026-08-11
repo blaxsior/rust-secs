@@ -28,8 +28,8 @@ enum Secs1BlockTransferState {
     /// 데이터 수신 중
     RECEIVE(ReceiveState), // 수신한 length byte
 
-                           // / 전송 후 종료 단계. 명세상 존재하나, 각 state에서 바로 IDLE 전이하도록 기능 구현 중
-                           // COMPLETION,
+    // / 전송 후 종료 단계. 명세상 존재하나, 각 state에서 바로 IDLE 전이하도록 기능 구현 중
+    // COMPLETION,
 }
 
 impl Secs1BlockTransferState {
@@ -159,16 +159,19 @@ impl Secs1BlockTransferMachine {
 
     /// 외부 시스템에 전송할 메시지를 담는다.
     fn emit_event(&mut self, output: Secs1BlockTransferEvent) {
+        log::debug!("[{}] emit event: {:?}", self.state.name(), output);
         self.outgoing_event_queue.push_back(output);
     }
 
     /// 상위로 블록을 보낸다.
     fn emit_block(&mut self, block: Secs1Block) {
+        log::debug!("[{}] emit block: {:?}", self.state.name(), block.header);
         self.outgoing_blocks.push_back(block);
     }
 
     /// 하위로 데이터를 보낸다.
     fn write(&mut self, data: Vec<u8>) {
+        log::debug!("[{}] queue write bytes: len={}", self.state.name(), data.len());
         self.outgoing_buffer.extend(data);
     }
 
@@ -186,6 +189,7 @@ impl Secs1BlockTransferMachine {
     }
 
     fn state_change(&mut self, state: Secs1BlockTransferState) {
+        log::debug!("state change: {} -> {}", self.state.name(), state.name());
         self.state = state;
         self.next();
     }
@@ -278,9 +282,20 @@ impl Secs1BlockTransferMachine {
     fn retrigger_line_control(&mut self) {
         self.cancel_timeout(SecsTimeoutUnit::T2);
         self.current_retry += 1;
+        log::debug!(
+            "[{}] retry line control: retry={}/{}",
+            self.state.name(),
+            self.current_retry,
+            self.max_retry
+        );
 
         // FAILED SEND case
         if self.current_retry > self.max_retry {
+            log::warn!(
+                "[{}] retry limit exceeded: max_retry={}",
+                self.state.name(),
+                self.max_retry
+            );
             // retry 횟수 초과 -> 상위에 timeout 발생 알리고 IDLE 복귀
             self.current_retry = 0; // retry 0으로 초기화(필수는 아니나, 오류 막기 위한 목적)
             self.state_change(Secs1BlockTransferState::IDLE);
@@ -328,6 +343,12 @@ impl Secs1BlockTransferMachine {
                 .incoming_blocks
                 .front()
                 .expect("unexpected empty block queue when send");
+            log::debug!(
+                "[{}] send block: header={:?}, data_len={}",
+                self.state.name(),
+                block.header,
+                block.data.len()
+            );
             block.to_bytes()
         };
 
@@ -341,6 +362,7 @@ impl Secs1BlockTransferMachine {
         let Some(byte) = self.incoming_buffer.pop_front() else {
             return;
         };
+        log::debug!("[{}] recv response byte: {byte:#04x}", self.state.name());
 
         // 일단 timeout을 받았음 -> cancel
         self.cancel_timeout(SecsTimeoutUnit::T2);
@@ -350,6 +372,7 @@ impl Secs1BlockTransferMachine {
         {
             // ACK 받음 -> 보낸 블록 제거 + IDLE로 전이
             let block = self.pop_incoming_block();
+            log::debug!("[{}] recv ACK for block: {:?}", self.state.name(), block.header);
             self.emit_event(Secs1BlockTransferEvent::SendSuccess {
                 header: block.header,
             });
@@ -358,6 +381,10 @@ impl Secs1BlockTransferMachine {
             return;
         } else {
             // ACK 아닌 신호 -> 재전송 로직 진입
+            log::warn!(
+                "[{}] expected ACK but received {byte:#04x}; retry send",
+                self.state.name()
+            );
             self.retrigger_line_control();
         }
     }
@@ -387,7 +414,7 @@ impl Secs1BlockTransferMachine {
         };
         // length byte를 수신한 경우
         self.cancel_timeout(SecsTimeoutUnit::T2);
-        log::debug!("[{}] length byte received", self.state.name());
+        log::debug!("[{}] length byte received: length={byte}", self.state.name());
 
         let is_length_valid = byte >= 10 && byte <= 254;
         if is_length_valid {
@@ -400,6 +427,7 @@ impl Secs1BlockTransferMachine {
             ));
         } else {
             // length가 비정상 -> 데이터 drop 모드로 전이
+            log::warn!("[{}] invalid length byte: length={byte}", self.state.name());
             self.state_change(Secs1BlockTransferState::RECEIVE(ReceiveState::InvalidBlock));
         }
         self.start_timeout(SecsTimeoutUnit::T1); // length byte 수신 후 data byte 수신 대기를 위한 T1 timer 시작
@@ -411,6 +439,8 @@ impl Secs1BlockTransferMachine {
         if self.incoming_buffer.is_empty() {
             return;
         }
+        let incoming_len = self.incoming_buffer.len();
+        let state_name = self.state.name();
 
         // 데이터가 들어온 상황이므로 초기화
         self.cancel_timeout(SecsTimeoutUnit::T1);
@@ -420,6 +450,11 @@ impl Secs1BlockTransferMachine {
         else {
             panic!("invalid state: process_waiting_data only called in InvalidBlock state");
         };
+        log::debug!(
+            "[{state_name}] recv data bytes: incoming_len={incoming_len}, buffered={}, target={}",
+            buffer.len(),
+            (*length + 2) as usize
+        );
         while let Some(byte) = self.incoming_buffer.pop_front() {
             buffer.push(byte);
 
@@ -523,16 +558,33 @@ impl Protocol<&[u8], Secs1Block, ()> for Secs1BlockTransferMachine {
     type Time = TimeoutTicket;
 
     fn handle_read(&mut self, msg: &[u8]) -> Result<(), Self::Error> {
+        log::debug!(
+            "[{}] handle read: len={}, buffered_before={}",
+            self.state.name(),
+            msg.len(),
+            self.incoming_buffer.len()
+        );
         self.incoming_buffer.extend(msg);
         self.run();
         Ok(())
     }
 
     fn poll_read(&mut self) -> Option<Self::Rout> {
-        self.outgoing_blocks.pop_front()
+        let block = self.outgoing_blocks.pop_front();
+        if let Some(block) = &block {
+            log::debug!("[{}] poll read block: {:?}", self.state.name(), block.header);
+        }
+        block
     }
 
     fn handle_write(&mut self, msg: Secs1Block) -> Result<(), Self::Error> {
+        log::debug!(
+            "[{}] handle write block: header={:?}, data_len={}, queued_before={}",
+            self.state.name(),
+            msg.header,
+            msg.data.len(),
+            self.incoming_blocks.len()
+        );
         self.incoming_blocks.push_back(msg);
         self.run();
         Ok(())
@@ -540,7 +592,12 @@ impl Protocol<&[u8], Secs1Block, ()> for Secs1BlockTransferMachine {
 
     fn poll_write(&mut self) -> Option<Self::Wout> {
         let data: Vec<u8> = self.outgoing_buffer.drain(..).collect();
-        if data.is_empty() { None } else { Some(data) }
+        if data.is_empty() {
+            None
+        } else {
+            log::debug!("[{}] poll write bytes: len={}", self.state.name(), data.len());
+            Some(data)
+        }
     }
 
     /// timeout 발생 시 처리
@@ -551,9 +608,10 @@ impl Protocol<&[u8], Secs1Block, ()> for Secs1BlockTransferMachine {
 
         let is_timeout_valid = self.timeout_manager.fire(&timeticket);
         if !is_timeout_valid {
-            // 이미 취소된 타임아웃인 경우 -> 무시
+            // 이미 취소된 타임아웃이므로 무시
             return Ok(());
         }
+        log::debug!("[{}] handle timeout: {:?}", self.state.name(), expired_unit);
 
         // 2. 상태(State)와 유닛(Unit)을 튜플로 묶어서 매칭
         match (&self.state, expired_unit) {
@@ -608,7 +666,11 @@ impl Protocol<&[u8], Secs1Block, ()> for Secs1BlockTransferMachine {
     }
 
     fn poll_timeout(&mut self) -> Option<Self::Time> {
-        self.outgoing_timeout_queue.pop_front()
+        let ticket = self.outgoing_timeout_queue.pop_front();
+        if let Some(ticket) = &ticket {
+            log::debug!("[{}] poll timeout: {:?}", self.state.name(), ticket.timeout);
+        }
+        ticket
     }
 
     fn handle_event(&mut self, _evt: ()) -> Result<(), Self::Error> {
@@ -618,7 +680,11 @@ impl Protocol<&[u8], Secs1Block, ()> for Secs1BlockTransferMachine {
 
     /// 외부 시스템에서 전송할 메시지를 가져간다.
     fn poll_event(&mut self) -> Option<Self::Eout> {
-        self.outgoing_event_queue.pop_front()
+        let event = self.outgoing_event_queue.pop_front();
+        if let Some(event) = &event {
+            log::debug!("[{}] poll event: {:?}", self.state.name(), event);
+        }
+        event
     }
 }
 
