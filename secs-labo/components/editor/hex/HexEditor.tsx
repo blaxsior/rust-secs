@@ -129,11 +129,11 @@ function HexEditor({ name, bytes, setBytes, updateItem: updateItemHandler, delet
   const clearItem = () => {
     clearItemHandler();
     // focusItemHandler(0);
-    toast.add({
-      title: "Clear Complete",
-      description: `success to clear data`,
-      type: "success"
-    });
+    // toast.add({
+    //   title: "Clear Complete",
+    //   description: `success to clear data`,
+    //   type: "success"
+    // });
   }
 
 

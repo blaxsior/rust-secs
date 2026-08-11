@@ -2,6 +2,7 @@
 
 import { LogLevel } from "@/types/log";
 import init, {
+  JsSecs1BlockTransfer,
   init_web_logger as _init_wasm_web_logger,
   decode_secs2,
   encode_secs2,
@@ -41,4 +42,4 @@ export function initWebLogger(
   console.info("wasm web logger initialized");
 }
 
-export { decode_secs2, encode_secs2 };
+export { JsSecs1BlockTransfer, decode_secs2, encode_secs2 };

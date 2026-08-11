@@ -1,6 +1,19 @@
 /* tslint:disable */
 /* eslint-disable */
 
+export class JsSecs1BlockTransfer {
+    free(): void;
+    [Symbol.dispose](): void;
+    constructor(config_json: string);
+    poll_event(): string | undefined;
+    poll_read(): string | undefined;
+    poll_timeout(): string | undefined;
+    poll_write(): Uint8Array | undefined;
+    read(bytes: Uint8Array): void;
+    timeout(key: string): void;
+    write(block_json: string): void;
+}
+
 export class JsWebRuntime {
     free(): void;
     [Symbol.dispose](): void;
@@ -42,6 +55,15 @@ export interface InitOutput {
     readonly jswebruntime_tick: (a: number) => [number, number];
     readonly decode_secs2: (a: number, b: number) => [number, number, number, number];
     readonly encode_secs2: (a: number, b: number) => [number, number, number, number];
+    readonly __wbg_jssecs1blocktransfer_free: (a: number, b: number) => void;
+    readonly jssecs1blocktransfer_new: (a: number, b: number) => [number, number, number];
+    readonly jssecs1blocktransfer_poll_event: (a: number) => [number, number, number, number];
+    readonly jssecs1blocktransfer_poll_read: (a: number) => [number, number, number, number];
+    readonly jssecs1blocktransfer_poll_timeout: (a: number) => [number, number];
+    readonly jssecs1blocktransfer_poll_write: (a: number) => [number, number];
+    readonly jssecs1blocktransfer_read: (a: number, b: number, c: number) => [number, number];
+    readonly jssecs1blocktransfer_timeout: (a: number, b: number, c: number) => [number, number];
+    readonly jssecs1blocktransfer_write: (a: number, b: number, c: number) => [number, number];
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
