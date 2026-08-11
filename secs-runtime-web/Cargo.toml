@@ -15,9 +15,9 @@ secs-ii.workspace = true
 secs-runtime.workspace = true
 secs-runtime-core.workspace = true
 secs-transport.workspace = true
+sansio = "1.0.1"
 serde.workspace = true
 serde_json.workspace = true
-serde-wasm-bindgen = "0.6"
 wasm-bindgen = "0.2.105"
 wasm-bindgen-futures = "0.4.55"
 
